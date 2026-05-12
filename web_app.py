@@ -1,15 +1,15 @@
 ﻿from __future__ import annotations
 
 import hashlib
-import logging
 import os
 import sqlite3
 import threading
 import time
 from pathlib import Path
 from typing import Any
-import gzip
 
+from user_database import init_user_db, register_user, login_user
+from pydantic import EmailStr
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,8 +24,6 @@ from dblp_match import (
     search_dblp_by_index,
 )
 from runtime_store import RuntimeStore
-
-logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = Path(os.getenv("DBLP_DB_PATH", "dblp.sqlite")).expanduser().resolve()
@@ -155,6 +153,18 @@ def _single_search_result(db_path: Path, title: str, max_candidates: int) -> dic
 
 
 @app.get("/", response_class=HTMLResponse)
+def index(request: Request) -> HTMLResponse:
+    visit_count = runtime_store.increment_counter("web_page_views")
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "app_version": APP_VERSION,
+            "visit_count": visit_count,
+        },
+    )
+
+@app.get("/retrieve", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     visit_count = runtime_store.increment_counter("web_page_views")
     return templates.TemplateResponse(
@@ -324,3 +334,48 @@ def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
 
 
 
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=20)
+    password: str = Field(..., min_length=6)
+    email: str = Field(...)
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+@app.on_event("startup")
+def startup_event():
+    init_user_db()
+
+@app.get("/register")
+def register(request: Request) -> HTMLResponse:
+    visit_count = runtime_store.increment_counter("web_page_views")
+    return templates.TemplateResponse(
+        "register.html",
+        {
+            "request": request,
+            "app_version": APP_VERSION,
+            "visit_count": visit_count,
+        },
+    )
+    # return register_user(payload.username, payload.password, payload.email)
+
+@app.get("/login")
+def login(request: Request) -> HTMLResponse:
+    visit_count = runtime_store.increment_counter("web_page_views")
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "app_version": APP_VERSION,
+            "visit_count": visit_count,
+        },
+    )
+
+@app.post("/api/user/register")
+def api_register(payload: RegisterRequest) -> dict:
+    return register_user(payload.username, payload.password, payload.email)
+
+@app.post("/api/user/login")
+def api_login(payload: LoginRequest) -> dict:
+    return login_user(payload.username, payload.password)

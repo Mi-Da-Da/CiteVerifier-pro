@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>登录 - CiteVerifier</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: "Microsoft YaHei", sans-serif; background: #f5f5f5; display: flex; flex-direction: column; min-height: 100vh; }
+
+    nav {
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      padding: 0 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+    .nav-left { display: flex; gap: 24px; }
+    .nav-left a { text-decoration: none; color: #333; font-size: 15px; }
+    .nav-left a:hover { color: #4A90E2; }
+
+    .container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 40px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .card h2 { font-size: 24px; margin-bottom: 28px; text-align: center; color: #222; }
+
+    .form-group { margin-bottom: 20px; }
+    .form-group label { display: block; font-size: 14px; color: #555; margin-bottom: 6px; }
+    .form-group input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus { border-color: #4A90E2; }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      background: #4A90E2;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .btn:hover { background: #357abd; }
+
+    .tip { text-align: center; margin-top: 20px; font-size: 14px; color: #888; }
+    .tip a { color: #4A90E2; text-decoration: none; }
+
+    #msg { margin-top: 16px; text-align: center; font-size: 14px; }
+    .success { color: #52c41a; }
+    .error { color: #ff4d4f; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-left">
+    <a href="/index.html">首页</a>
+    <a href="#">英文文献</a>
+    <a href="#">中文文献</a>
+    <a href="#">更多</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="card">
+    <h2>登录</h2>
+
+    <div class="form-group">
+      <label>用户名</label>
+      <input type="text" id="username" placeholder="请输入用户名">
+    </div>
+    <div class="form-group">
+      <label>密码</label>
+      <input type="password" id="password" placeholder="请输入密码">
+    </div>
+
+    <button class="btn" onclick="login()">登录</button>
+    <div id="msg"></div>
+
+    <div class="tip">还没有账号？<a href="/register">立即注册</a></div>
+  </div>
+</div>
+
+<script>
+async function login() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value.trim();
+  const msg = document.getElementById('msg');
+
+  if (!username || !password) {
+    msg.className = 'error';
+    msg.textContent = '请填写用户名和密码';
+    return;
+  }
+
+  const res = await fetch('/api/user/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json();
+
+  if (data.success) {
+    msg.className = 'success';
+    msg.textContent = '登录成功，正在跳转...';
+    localStorage.setItem('username', data.username);
+    setTimeout(() => window.location.href = '/', 1000);
+  } else {
+    msg.className = 'error';
+    msg.textContent = data.message;
+  }
+}
+</script>
+
+</body>
+</html>

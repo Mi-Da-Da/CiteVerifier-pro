@@ -37,11 +37,36 @@ function RegisterPage() {
     confirm: confirm && !confirmOk ? t({ zh: "两次密码不一致。", en: "Passwords don't match." }) : "",
   };
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!valid) return;
-    navigate({ to: "/login" });
-  };
+ // const submit = (e: React.FormEvent) => {
+    //e.preventDefault();
+    //if (!valid) return;
+    //navigate({ to: "/login" });
+ // };
+
+const [err, setErr] = useState("");
+
+const submit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!valid) return;
+  setErr("");
+
+  try {
+    const res = await fetch("/api/user/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, email, password }),
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      navigate({ to: "/login" });
+    } else {
+      setErr(data.message);
+    }
+  } catch {
+    setErr("网络错误，请稍后重试");
+  }
+};
 
   return (
     <div className="relative min-h-screen w-full bg-black text-white flex flex-col">
@@ -80,6 +105,7 @@ function RegisterPage() {
           <Field label={t({ zh: "确认密码", en: "Confirm password" })} value={confirm} onChange={setConfirm}
                  placeholder={t({ zh: "再次输入密码", en: "Enter password again" })} error={errs.confirm} type={show ? "text" : "password"} />
 
+          {err && <p className="text-sm text-red-400 mb-3">{err}</p>}
           <button
             type="submit"
             disabled={!valid}

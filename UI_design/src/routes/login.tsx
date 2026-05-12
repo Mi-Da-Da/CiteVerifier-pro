@@ -25,12 +25,36 @@ function LoginPage() {
 
   const valid = username.trim().length > 0 && password.length >= 6;
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!valid) return;
-    setErr("");
-    navigate({ to: "/" });
-  };
+  //const submit = (e: React.FormEvent) => {
+    //e.preventDefault();
+    //if (!valid) return;
+    //setErr("");
+    //navigate({ to: "/" });
+  //};
+const submit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!valid) return;
+  setErr("");
+
+  try {
+    const res = await fetch("/api/user/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username.trim(), password }),
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      localStorage.setItem("username", data.username);
+      navigate({ to: "/" });
+    } else {
+      setErr(data.message);
+    }
+  } catch {
+    setErr("网络错误，请稍后重试");
+  }
+};
+
 
   return (
     <div className="relative min-h-screen w-full bg-black text-white flex flex-col">
