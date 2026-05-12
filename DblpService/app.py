@@ -85,21 +85,20 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 @app.get("/", response_class=HTMLResponse)
 @app.get("/bootstrap", response_class=HTMLResponse)
 def bootstrap_console(request: Request) -> HTMLResponse:
-    # 避免使用request对象作为模板参数，防止Jinja2缓存问题
-    context = {
-        "app_version": APP_VERSION,
-        "visit_count": _next_visit(),
-        "default_xml_gz_url": DEFAULT_XML_GZ_URL,
-        "default_dtd_url": DEFAULT_DTD_URL,
-        "default_batch_size": DEFAULT_BATCH_SIZE,
-        "default_progress_every": DEFAULT_PROGRESS_EVERY,
-        "data_dir": str(DATA_DIR),
-        "api_base": "",
-    }
-    # 直接渲染模板内容
-    template = templates.get_template("bootstrap.html")
-    html_content = template.render(**context)
-    return HTMLResponse(content=html_content)
+    return templates.TemplateResponse(
+        request=request,
+        name="bootstrap.html",
+        context={
+            "app_version": APP_VERSION,
+            "visit_count": _next_visit(),
+            "default_xml_gz_url": DEFAULT_XML_GZ_URL,
+            "default_dtd_url": DEFAULT_DTD_URL,
+            "default_batch_size": DEFAULT_BATCH_SIZE,
+            "default_progress_every": DEFAULT_PROGRESS_EVERY,
+            "data_dir": str(DATA_DIR),
+            "api_base": "",
+        },
+    )
 
 
 def _normalize(text: str) -> str:
