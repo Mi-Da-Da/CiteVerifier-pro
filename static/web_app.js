@@ -17,11 +17,7 @@ const batchMsgEl = document.getElementById("batch-msg");
 const batchSummaryEl = document.getElementById("batch-summary");
 const batchTbodyEl = document.getElementById("batch-tbody");
 const batchDownloadBtnEl = document.getElementById("batch-download-btn");
-
-const pdfFormEl = document.getElementById("pdf-form");
-const pdfFileEl = document.getElementById("pdf-file");
-const pdfMsgEl = document.getElementById("pdf-msg");
-const pdfResultBoxEl = document.getElementById("pdf-result-box");
+const batchPdfFileEl = document.getElementById("batch-pdf-file");
 
 const MAX_BATCH_SIZE = 200;
 const LANG_STORAGE_KEY = "citeverifier_lang";
@@ -84,17 +80,10 @@ const I18N = {
     batch_input_placeholder:
       "Attention Is All You Need\nBERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
     batch_file_label: "Upload TXT/CSV (first column used)",
+    batch_pdf_label: "Or Upload PDF (extract references and search)",
     batch_run_button: "Run Batch",
     batch_download_button: "Download CSV",
     batch_no_result: "No batch result yet.",
-    pdf_parse_title: "PDF Parse",
-    pdf_file_label: "Upload PDF File",
-    pdf_parse_button: "Parse PDF",
-    pdf_no_result: "No parse result yet.",
-    msg_pdf_parsing: "Parsing PDF...",
-    msg_pdf_success: "PDF parsed successfully. Found {n} references.",
-    msg_pdf_failed: "PDF parse failed: {err}",
-    msg_pdf_no_file: "Please select a PDF file.",
     result_title: "Result",
     result_empty: "No result yet.",
 
@@ -135,6 +124,9 @@ const I18N = {
     msg_batch_input_required: "Please input at least one title (textarea or file).",
     msg_batch_too_many: "Too many titles. Limit is {max}.",
     msg_batch_processing: "Processing {n} titles...",
+    msg_pdf_batch_parsing: "Parsing PDF and extracting references...",
+    msg_pdf_batch_searching: "Searching {n} references in DBLP...",
+    msg_pdf_batch_success: "PDF processed. Found {n} references, matched {found}/{total}.",
     msg_batch_completed: "Batch completed. Matched {found} / {total}.",
     msg_batch_failed: "Batch failed: {err}",
     msg_no_rows: "No rows.",
@@ -189,17 +181,10 @@ const I18N = {
     batch_input_placeholder:
       "Attention Is All You Need\nBERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
     batch_file_label: "上传 TXT/CSV（使用第一列）",
+    batch_pdf_label: "或上传 PDF（提取参考文献并检索）",
     batch_run_button: "执行批处理",
     batch_download_button: "下载 CSV",
     batch_no_result: "暂无批处理结果。",
-    pdf_parse_title: "PDF 解析",
-    pdf_file_label: "上传 PDF 文件",
-    pdf_parse_button: "解析 PDF",
-    pdf_no_result: "暂无解析结果。",
-    msg_pdf_parsing: "正在解析 PDF...",
-    msg_pdf_success: "PDF 解析成功，找到 {n} 条参考文献。",
-    msg_pdf_failed: "PDF 解析失败：{err}",
-    msg_pdf_no_file: "请选择 PDF 文件。",
     result_title: "检索结果",
     result_empty: "暂无结果。",
 
@@ -240,6 +225,9 @@ const I18N = {
     msg_batch_input_required: "请至少输入一个标题（文本框或文件）。",
     msg_batch_too_many: "标题数量过多，最多 {max} 条。",
     msg_batch_processing: "正在处理 {n} 条标题...",
+    msg_pdf_batch_parsing: "正在解析 PDF 并提取参考文献...",
+    msg_pdf_batch_searching: "正在 DBLP 中检索 {n} 条参考文献...",
+    msg_pdf_batch_success: "PDF 处理完成。找到 {n} 条参考文献，匹配 {found}/{total}。",
     msg_batch_completed: "批处理完成：匹配 {found} / {total}。",
     msg_batch_failed: "批处理失败：{err}",
     msg_no_rows: "暂无数据行。",
@@ -617,6 +605,12 @@ async function extractTitlesFromFile(file) {
 
 async function onBatchSearch(event) {
   event.preventDefault();
+
+  if (batchPdfFileEl.files && batchPdfFileEl.files[0]) {
+    await onPdfBatchSearch(batchPdfFileEl.files[0]);
+    return;
+  }
+
   const textTitles = parseLines(batchInputEl.value);
   let fileTitles = [];
   if (batchFileEl.files && batchFileEl.files[0]) {
@@ -671,64 +665,50 @@ async function onBatchSearch(event) {
   }
 }
 
-searchFormEl.addEventListener("submit", onSearch);
-batchFormEl.addEventListener("submit", onBatchSearch);
-batchDownloadBtnEl.addEventListener("click", downloadBatchCsv);
-
-function setPdfMessage(text, isError = false) {
-  pdfMsgEl.textContent = text || "";
-  pdfMsgEl.classList.toggle("error", Boolean(isError));
-}
-
-function renderPdfReferences(references) {
-  if (!references || references.length === 0) {
-    pdfResultBoxEl.classList.add("empty");
-    pdfResultBoxEl.textContent = t("pdf_no_result");
-    return;
-  }
-  pdfResultBoxEl.classList.remove("empty");
-  let html = "";
-  for (const ref of references) {
-    html += `<div class="ref-item">`;
-    if (ref.title) html += `<div><span class="result-k">Title:</span><span class="result-v">${escapeHtml(ref.title)}</span></div>`;
-    if (ref.authors && ref.authors.length > 0) html += `<div><span class="result-k">Authors:</span><span class="result-v">${escapeHtml(ref.authors.join(", "))}</span></div>`;
-    if (ref.venue) html += `<div><span class="result-k">Venue:</span><span class="result-v">${escapeHtml(ref.venue)}</span></div>`;
-    if (ref.year) html += `<div><span class="result-k">Year:</span><span class="result-v">${escapeHtml(ref.year)}</span></div>`;
-    if (ref.raw) html += `<div><span class="result-k">Raw:</span><span class="result-v">${escapeHtml(ref.raw)}</span></div>`;
-    html += `</div><hr/>`;
-  }
-  pdfResultBoxEl.innerHTML = html;
-}
-
-async function onPdfParse(event) {
-  event.preventDefault();
-  if (!pdfFileEl.files || !pdfFileEl.files[0]) {
-    setPdfMessage(t("msg_pdf_no_file"), true);
-    return;
-  }
-  const file = pdfFileEl.files[0];
+async function onPdfBatchSearch(file) {
   const formData = new FormData();
   formData.append("file", file);
-  setPdfMessage(t("msg_pdf_parsing"));
+  setBatchMessage(t("msg_pdf_batch_parsing"));
   try {
-    const resp = await fetch("/api/parse/pdf", {
+    const resp = await fetch("/api/search/pdf/batch", {
       method: "POST",
       body: formData,
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
-    renderPdfReferences(data.references || []);
-    setPdfMessage(t("msg_pdf_success", { n: (data.references || []).length }));
+
+    const summary = data.summary || null;
+    const items = Array.isArray(data.items) ? data.items : [];
+    const totalRefs = (data.references || []).length;
+
+    latestBatchSummary = summary;
+    latestBatchItems = items;
+    renderBatchSummary(summary);
+    renderBatchTable(items);
+    batchDownloadBtnEl.disabled = items.length === 0;
+    setBatchMessage(
+      t("msg_pdf_batch_success", {
+        n: totalRefs,
+        found: summary?.found_count ?? 0,
+        total: items.length,
+      })
+    );
+    await refreshHealth();
   } catch (err) {
-    setPdfMessage(t("msg_pdf_failed", { err: err.message }), true);
-    pdfResultBoxEl.classList.add("empty");
-    pdfResultBoxEl.textContent = t("pdf_no_result");
+    latestBatchSummary = null;
+    latestBatchItems = [];
+    batchDownloadBtnEl.disabled = true;
+    renderBatchSummary(null);
+    renderBatchTable([]);
+    setBatchMessage(t("msg_batch_failed", { err: err.message }), true);
   }
 }
 
-if (pdfFormEl) {
-  pdfFormEl.addEventListener("submit", onPdfParse);
-}
+searchFormEl.addEventListener("submit", onSearch);
+batchFormEl.addEventListener("submit", onBatchSearch);
+batchDownloadBtnEl.addEventListener("click", downloadBatchCsv);
+
+
 
 initLanguage();
 renderBatchSummary(null);

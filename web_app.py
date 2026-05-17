@@ -394,7 +394,124 @@ def api_parse_pdf(file: UploadFile = File(...)):
             f.write(content)
 
         references = llm_parse_pdf(str(temp_path))
-        return {"success": True, "references": references}
+        titles = [ref.get("title") for ref in references if ref.get("title")]
+        return {"success": True, "references": references, "titles": titles}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+@app.post("/api/search/pdf/batch")
+def api_search_pdf_batch(file: UploadFile = File(...)):
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+
+    temp_dir = Path("temp")
+    temp_dir.mkdir(exist_ok=True)
+    temp_path = temp_dir / file.filename
+
+    try:
+        with open(temp_path, "wb") as f:
+            content = file.file.read()
+            f.write(content)
+
+        references = llm_parse_pdf(str(temp_path))
+        titles = [ref.get("title") for ref in references if ref.get("title")]
+
+        if not titles:
+            return {
+                "summary": {
+                    "run_id": None,
+                    "total_input": 0,
+                    "total_processed": 0,
+                    "found_count": 0,
+                    "not_found_count": 0,
+                },
+                "items": [],
+                "references": references,
+            }
+
+        db_path = _resolve_db_path()
+        if not db_path.exists():
+            raise HTTPException(status_code=404, detail="DBLP database not found.")
+
+        max_candidates = 100000
+        runtime_store.increment_counter("batch_search_requests")
+        run_id = runtime_store.start_batch_run(
+            total_input=len(titles),
+            max_candidates=max_candidates,
+        )
+
+        started_at = time.perf_counter()
+        found_count = 0
+        items: list[dict[str, Any]] = []
+
+        for idx, title in enumerate(titles, start=1):
+            item_started_at = time.perf_counter()
+            error_message: str | None = None
+            result: dict[str, Any]
+            try:
+                result = _single_search_result(db_path, title, max_candidates)
+            except Exception as exc:
+                error_message = str(exc)
+                result = {"found": False, "query_title": title}
+
+            duration_ms = max(0, int((time.perf_counter() - item_started_at) * 1000))
+            found = bool(result.get("found"))
+            if found:
+                found_count += 1
+
+            runtime_store.record_batch_item(
+                run_id,
+                item_index=idx,
+                query_title=title,
+                found=found,
+                dblp_id=result.get("dblp_id") if isinstance(result.get("dblp_id"), int) else None,
+                dblp_title=result.get("dblp_title"),
+                dblp_title_similarity=result.get("dblp_title_similarity"),
+                year=result.get("year"),
+                venue=result.get("venue"),
+                pub_type=result.get("pub_type"),
+                duration_ms=duration_ms,
+                error_message=error_message,
+            )
+
+            items.append({
+                "index": idx,
+                **result,
+                "duration_ms": duration_ms,
+                "error_message": error_message,
+            })
+
+        total_duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
+        runtime_store.finish_batch_run(
+            run_id,
+            total_processed=len(items),
+            found_count=found_count,
+            duration_ms=total_duration_ms,
+            status="completed",
+            error_message=None,
+        )
+        runtime_store.increment_counter("batch_search_items_total", delta=len(items))
+        runtime_store.increment_counter("batch_search_found_total", delta=found_count)
+
+        return {
+            "summary": {
+                "run_id": run_id,
+                "total_input": len(titles),
+                "total_processed": len(items),
+                "found_count": found_count,
+                "not_found_count": len(items) - found_count,
+                "max_candidates": max_candidates,
+                "duration_ms": total_duration_ms,
+            },
+            "items": items,
+            "references": references,
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
