@@ -15,7 +15,7 @@ MAX_RETRY_TIMES = 3
 # LLM API key should be set via environment variable
 # export DASHSCOPE_API_KEY='your_api_key_here'
 if 'DASHSCOPE_API_KEY' not in os.environ:
-    os.environ['DASHSCOPE_API_KEY'] = 'YOUR_API_KEY_HERE'
+    os.environ['DASHSCOPE_API_KEY'] = 'sk-7544ef70b6e04edcb66902259bacba04'
 
 def llm_parse(text: str) -> List[Dict]:
     """

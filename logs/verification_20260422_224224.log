@@ -1,4 +1,0 @@
-2026-04-22 22:42:24,759 - asyncio - DEBUG - Using proactor: IocpProactor
-2026-04-22 22:42:24,768 - unified_database - DEBUG - Unified database tables created/verified
-2026-04-22 22:42:24,769 - parsed_references_database - DEBUG - Parsed references database tables created/verified
-2026-04-22 22:42:24,770 - unified_database - DEBUG - Unified database tables created/verified
