@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import os
@@ -10,11 +10,13 @@ from typing import Any
 
 from user_database import init_user_db, register_user, login_user
 from pydantic import EmailStr
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, File, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
+
+from parser.llm_parser import llm_parse_pdf
 
 from dblp_match import (
     _db_has_word_index,
@@ -155,26 +157,24 @@ def _single_search_result(db_path: Path, title: str, max_candidates: int) -> dic
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     visit_count = runtime_store.increment_counter("web_page_views")
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "app_version": APP_VERSION,
-            "visit_count": visit_count,
-        },
-    )
+    template_path = BASE_DIR / "templates" / "web_index.html"
+    with open(template_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    # Replace placeholders manually
+    content = content.replace("{{ app_version }}", APP_VERSION)
+    content = content.replace("{{ visit_count }}", str(visit_count))
+    return HTMLResponse(content)
 
 @app.get("/retrieve", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     visit_count = runtime_store.increment_counter("web_page_views")
-    return templates.TemplateResponse(
-        "web_index.html",
-        {
-            "request": request,
-            "app_version": APP_VERSION,
-            "visit_count": visit_count,
-        },
-    )
+    template_path = BASE_DIR / "templates" / "web_index.html"
+    with open(template_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    # Replace placeholders manually
+    content = content.replace("{{ app_version }}", APP_VERSION)
+    content = content.replace("{{ visit_count }}", str(visit_count))
+    return HTMLResponse(content)
 
 
 @app.get("/api/health")
@@ -350,27 +350,25 @@ def startup_event():
 @app.get("/register")
 def register(request: Request) -> HTMLResponse:
     visit_count = runtime_store.increment_counter("web_page_views")
-    return templates.TemplateResponse(
-        "register.html",
-        {
-            "request": request,
-            "app_version": APP_VERSION,
-            "visit_count": visit_count,
-        },
-    )
+    template_path = BASE_DIR / "templates" / "register.html"
+    with open(template_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    # Replace placeholders manually
+    content = content.replace("{{ app_version }}", APP_VERSION)
+    content = content.replace("{{ visit_count }}", str(visit_count))
+    return HTMLResponse(content)
     # return register_user(payload.username, payload.password, payload.email)
 
 @app.get("/login")
 def login(request: Request) -> HTMLResponse:
     visit_count = runtime_store.increment_counter("web_page_views")
-    return templates.TemplateResponse(
-        "login.html",
-        {
-            "request": request,
-            "app_version": APP_VERSION,
-            "visit_count": visit_count,
-        },
-    )
+    template_path = BASE_DIR / "templates" / "login.html"
+    with open(template_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    # Replace placeholders manually
+    content = content.replace("{{ app_version }}", APP_VERSION)
+    content = content.replace("{{ visit_count }}", str(visit_count))
+    return HTMLResponse(content)
 
 @app.post("/api/user/register")
 def api_register(payload: RegisterRequest) -> dict:
@@ -379,3 +377,26 @@ def api_register(payload: RegisterRequest) -> dict:
 @app.post("/api/user/login")
 def api_login(payload: LoginRequest) -> dict:
     return login_user(payload.username, payload.password)
+
+
+@app.post("/api/parse/pdf")
+def api_parse_pdf(file: UploadFile = File(...)):
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+
+    temp_dir = Path("temp")
+    temp_dir.mkdir(exist_ok=True)
+    temp_path = temp_dir / file.filename
+
+    try:
+        with open(temp_path, "wb") as f:
+            content = file.file.read()
+            f.write(content)
+
+        references = llm_parse_pdf(str(temp_path))
+        return {"success": True, "references": references}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()

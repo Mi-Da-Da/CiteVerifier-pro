@@ -18,6 +18,11 @@ const batchSummaryEl = document.getElementById("batch-summary");
 const batchTbodyEl = document.getElementById("batch-tbody");
 const batchDownloadBtnEl = document.getElementById("batch-download-btn");
 
+const pdfFormEl = document.getElementById("pdf-form");
+const pdfFileEl = document.getElementById("pdf-file");
+const pdfMsgEl = document.getElementById("pdf-msg");
+const pdfResultBoxEl = document.getElementById("pdf-result-box");
+
 const MAX_BATCH_SIZE = 200;
 const LANG_STORAGE_KEY = "citeverifier_lang";
 const SUPPORTED_LANGS = new Set(["en", "zh"]);
@@ -82,6 +87,14 @@ const I18N = {
     batch_run_button: "Run Batch",
     batch_download_button: "Download CSV",
     batch_no_result: "No batch result yet.",
+    pdf_parse_title: "PDF Parse",
+    pdf_file_label: "Upload PDF File",
+    pdf_parse_button: "Parse PDF",
+    pdf_no_result: "No parse result yet.",
+    msg_pdf_parsing: "Parsing PDF...",
+    msg_pdf_success: "PDF parsed successfully. Found {n} references.",
+    msg_pdf_failed: "PDF parse failed: {err}",
+    msg_pdf_no_file: "Please select a PDF file.",
     result_title: "Result",
     result_empty: "No result yet.",
 
@@ -179,6 +192,14 @@ const I18N = {
     batch_run_button: "执行批处理",
     batch_download_button: "下载 CSV",
     batch_no_result: "暂无批处理结果。",
+    pdf_parse_title: "PDF 解析",
+    pdf_file_label: "上传 PDF 文件",
+    pdf_parse_button: "解析 PDF",
+    pdf_no_result: "暂无解析结果。",
+    msg_pdf_parsing: "正在解析 PDF...",
+    msg_pdf_success: "PDF 解析成功，找到 {n} 条参考文献。",
+    msg_pdf_failed: "PDF 解析失败：{err}",
+    msg_pdf_no_file: "请选择 PDF 文件。",
     result_title: "检索结果",
     result_empty: "暂无结果。",
 
@@ -653,6 +674,61 @@ async function onBatchSearch(event) {
 searchFormEl.addEventListener("submit", onSearch);
 batchFormEl.addEventListener("submit", onBatchSearch);
 batchDownloadBtnEl.addEventListener("click", downloadBatchCsv);
+
+function setPdfMessage(text, isError = false) {
+  pdfMsgEl.textContent = text || "";
+  pdfMsgEl.classList.toggle("error", Boolean(isError));
+}
+
+function renderPdfReferences(references) {
+  if (!references || references.length === 0) {
+    pdfResultBoxEl.classList.add("empty");
+    pdfResultBoxEl.textContent = t("pdf_no_result");
+    return;
+  }
+  pdfResultBoxEl.classList.remove("empty");
+  let html = "";
+  for (const ref of references) {
+    html += `<div class="ref-item">`;
+    if (ref.title) html += `<div><span class="result-k">Title:</span><span class="result-v">${escapeHtml(ref.title)}</span></div>`;
+    if (ref.authors && ref.authors.length > 0) html += `<div><span class="result-k">Authors:</span><span class="result-v">${escapeHtml(ref.authors.join(", "))}</span></div>`;
+    if (ref.venue) html += `<div><span class="result-k">Venue:</span><span class="result-v">${escapeHtml(ref.venue)}</span></div>`;
+    if (ref.year) html += `<div><span class="result-k">Year:</span><span class="result-v">${escapeHtml(ref.year)}</span></div>`;
+    if (ref.raw) html += `<div><span class="result-k">Raw:</span><span class="result-v">${escapeHtml(ref.raw)}</span></div>`;
+    html += `</div><hr/>`;
+  }
+  pdfResultBoxEl.innerHTML = html;
+}
+
+async function onPdfParse(event) {
+  event.preventDefault();
+  if (!pdfFileEl.files || !pdfFileEl.files[0]) {
+    setPdfMessage(t("msg_pdf_no_file"), true);
+    return;
+  }
+  const file = pdfFileEl.files[0];
+  const formData = new FormData();
+  formData.append("file", file);
+  setPdfMessage(t("msg_pdf_parsing"));
+  try {
+    const resp = await fetch("/api/parse/pdf", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+    renderPdfReferences(data.references || []);
+    setPdfMessage(t("msg_pdf_success", { n: (data.references || []).length }));
+  } catch (err) {
+    setPdfMessage(t("msg_pdf_failed", { err: err.message }), true);
+    pdfResultBoxEl.classList.add("empty");
+    pdfResultBoxEl.textContent = t("pdf_no_result");
+  }
+}
+
+if (pdfFormEl) {
+  pdfFormEl.addEventListener("submit", onPdfParse);
+}
 
 initLanguage();
 renderBatchSummary(null);

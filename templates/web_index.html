@@ -171,6 +171,21 @@
         </section>
 
         <section class="card">
+          <h2 data-i18n="pdf_parse_title">PDF Parse</h2>
+          <form id="pdf-form" class="search-form">
+            <label class="field">
+              <span data-i18n="pdf_file_label">Upload PDF File</span>
+              <input id="pdf-file" type="file" accept=".pdf,application/pdf" />
+            </label>
+            <div class="btn-row">
+              <button type="submit" id="pdf-parse-btn" data-i18n="pdf_parse_button">Parse PDF</button>
+            </div>
+          </form>
+          <p id="pdf-msg" class="msg"></p>
+          <div id="pdf-result-box" class="result-box empty" data-i18n="pdf_no_result">No parse result yet.</div>
+        </section>
+
+        <section class="card">
           <h2 data-i18n="result_title">Result</h2>
           <div id="result-box" class="result-box empty" data-i18n="result_empty">No result yet.</div>
         </section>
