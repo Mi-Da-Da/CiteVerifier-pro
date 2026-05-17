@@ -143,6 +143,10 @@
               <span data-i18n="batch_file_label">Upload TXT/CSV (first column used)</span>
               <input id="batch-file" type="file" accept=".txt,.csv,text/plain,text/csv" />
             </label>
+            <label class="field">
+              <span data-i18n="batch_pdf_label">Or Upload PDF (extract references and search)</span>
+              <input id="batch-pdf-file" type="file" accept=".pdf,application/pdf" />
+            </label>
             <div class="btn-row">
               <button type="submit" id="batch-run-btn" data-i18n="batch_run_button">Run Batch</button>
               <button type="button" id="batch-download-btn" class="btn-secondary" disabled data-i18n="batch_download_button">
@@ -168,21 +172,6 @@
               <tbody id="batch-tbody"></tbody>
             </table>
           </div>
-        </section>
-
-        <section class="card">
-          <h2 data-i18n="pdf_parse_title">PDF Parse</h2>
-          <form id="pdf-form" class="search-form">
-            <label class="field">
-              <span data-i18n="pdf_file_label">Upload PDF File</span>
-              <input id="pdf-file" type="file" accept=".pdf,application/pdf" />
-            </label>
-            <div class="btn-row">
-              <button type="submit" id="pdf-parse-btn" data-i18n="pdf_parse_button">Parse PDF</button>
-            </div>
-          </form>
-          <p id="pdf-msg" class="msg"></p>
-          <div id="pdf-result-box" class="result-box empty" data-i18n="pdf_no_result">No parse result yet.</div>
         </section>
 
         <section class="card">
