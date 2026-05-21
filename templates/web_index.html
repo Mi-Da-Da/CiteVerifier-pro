@@ -6,6 +6,53 @@
     <title data-i18n="page_title">CiteVerifier DBLP Search</title>
     <link rel="stylesheet" href="/static/web_styles.css" />
     <link rel="stylesheet" href="/static/material_theme.css" />
+    <style>
+      /* 进度条样式 */
+      #progress-container {
+        display: none;
+        margin-top: 12px;
+      }
+      #progress-container.visible {
+        display: block;
+      }
+      #progress-label {
+        font-size: 0.85rem;
+        color: #555;
+        margin-bottom: 6px;
+      }
+      #progress-bar-wrap {
+        width: 100%;
+        background: #e0e0e0;
+        border-radius: 6px;
+        height: 10px;
+        overflow: hidden;
+      }
+      #progress-bar {
+        height: 10px;
+        width: 0%;
+        background: #1976d2;
+        border-radius: 6px;
+        transition: width 0.3s ease;
+      }
+      #progress-bar.parsing {
+        background: #f57c00;
+        animation: pulse 1.2s infinite;
+      }
+      #progress-bar.searching {
+        background: #1976d2;
+      }
+      #progress-bar.done {
+        background: #388e3c;
+      }
+      #progress-bar.error {
+        background: #d32f2f;
+      }
+      @keyframes pulse {
+        0%   { opacity: 1; }
+        50%  { opacity: 0.5; }
+        100% { opacity: 1; }
+      }
+    </style>
   </head>
   <body>
     <header class="top-titlebar">
@@ -154,6 +201,15 @@
               </button>
             </div>
           </form>
+
+          <!-- 进度条区域 -->
+          <div id="progress-container">
+            <p id="progress-label">Preparing...</p>
+            <div id="progress-bar-wrap">
+              <div id="progress-bar"></div>
+            </div>
+          </div>
+
           <p id="batch-msg" class="msg"></p>
           <div id="batch-summary" class="result-box empty" data-i18n="batch_no_result">No batch result yet.</div>
           <div class="table-wrap">
@@ -182,6 +238,72 @@
     </div>
 
     <script src="/static/web_app.js"></script>
+    <script>
+      // 进度条轮询逻辑
+      let _progressTimer = null;
+
+      function startProgressPolling() {
+        const container = document.getElementById('progress-container');
+        const bar = document.getElementById('progress-bar');
+        const label = document.getElementById('progress-label');
+
+        container.classList.add('visible');
+        bar.style.width = '0%';
+        bar.className = '';
+        label.textContent = 'Starting...';
+
+        _progressTimer = setInterval(async () => {
+          try {
+            const res = await fetch('/api/progress');
+            const data = await res.json();
+
+            const status = data.status;
+            const total = data.total || 0;
+            const processed = data.processed || 0;
+            const found = data.found || 0;
+            const stage = data.stage || '';
+
+            bar.className = status;
+
+            if (status === 'parsing') {
+              bar.style.width = '30%';
+              label.textContent = 'Step 1/2 — Parsing PDF references with LLM...';
+            } else if (status === 'searching') {
+              const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+              bar.style.width = (30 + pct * 0.7) + '%';
+              label.textContent = `Step 2/2 — Searching DBLP: ${processed} / ${total}  (found ${found})`;
+            } else if (status === 'done') {
+              bar.style.width = '100%';
+              label.textContent = `Done — ${processed} processed, ${found} matched`;
+              stopProgressPolling();
+            } else if (status === 'error') {
+              bar.style.width = '100%';
+              label.textContent = `Error: ${stage}`;
+              stopProgressPolling();
+            }
+          } catch (e) {
+            // 网络错误时静默忽略
+          }
+        }, 1000);
+      }
+
+      function stopProgressPolling() {
+        if (_progressTimer) {
+          clearInterval(_progressTimer);
+          _progressTimer = null;
+        }
+      }
+
+      // 在 Run Batch 按钮点击时启动进度条
+      document.addEventListener('DOMContentLoaded', () => {
+        const batchForm = document.getElementById('batch-form');
+        if (batchForm) {
+          batchForm.addEventListener('submit', () => {
+            stopProgressPolling();
+            startProgressPolling();
+          });
+        }
+      });
+    </script>
   </body>
 </html>
-
