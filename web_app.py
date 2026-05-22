@@ -5,11 +5,11 @@ import os
 import sqlite3
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from user_database import init_user_db, register_user, login_user
-from pydantic import EmailStr
 from fastapi import FastAPI, HTTPException, Request, File, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -37,10 +37,33 @@ MAX_BATCH_TITLES = 200
 
 APP_VERSION = "0.1.0"
 
+# ── 进度状态 ────────────────────────────────────────────────
+_progress: dict[str, Any] = {
+    "status": "idle",   # idle / parsing / searching / done / error
+    "stage": "",        # 当前阶段描述
+    "total": 0,
+    "processed": 0,
+    "found": 0,
+}
+_progress_lock = threading.Lock()
+
+
+def _set_progress(**kwargs: Any) -> None:
+    with _progress_lock:
+        _progress.update(kwargs)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_user_db()
+    yield
+
+
 app = FastAPI(
     title="CiteVerifier Web",
     description="Web UI for DBLP title lookup in CiteVerifier.",
     version=APP_VERSION,
+    lifespan=lifespan,
 )
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -59,6 +82,17 @@ class TitleSearchRequest(BaseModel):
 class BatchTitleSearchRequest(BaseModel):
     titles: list[str] = Field(default_factory=list)
     max_candidates: int = Field(default=100000, ge=1, le=500000)
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=20)
+    password: str = Field(..., min_length=6)
+    email: str = Field(...)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 def _resolve_db_path() -> Path:
@@ -154,45 +188,81 @@ def _single_search_result(db_path: Path, title: str, max_candidates: int) -> dic
     }
 
 
+# ── 页面路由 ────────────────────────────────────────────────
+
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request) -> HTMLResponse:
+def page_home(request: Request) -> HTMLResponse:
     visit_count = runtime_store.increment_counter("web_page_views")
     template_path = BASE_DIR / "templates" / "web_index.html"
     with open(template_path, "r", encoding="utf-8") as f:
         content = f.read()
-    # Replace placeholders manually
     content = content.replace("{{ app_version }}", APP_VERSION)
     content = content.replace("{{ visit_count }}", str(visit_count))
     return HTMLResponse(content)
+
 
 @app.get("/retrieve", response_class=HTMLResponse)
-def index(request: Request) -> HTMLResponse:
+def page_retrieve(request: Request) -> HTMLResponse:
     visit_count = runtime_store.increment_counter("web_page_views")
     template_path = BASE_DIR / "templates" / "web_index.html"
     with open(template_path, "r", encoding="utf-8") as f:
         content = f.read()
-    # Replace placeholders manually
     content = content.replace("{{ app_version }}", APP_VERSION)
     content = content.replace("{{ visit_count }}", str(visit_count))
     return HTMLResponse(content)
 
+
+@app.get("/register", response_class=HTMLResponse)
+def page_register(request: Request) -> HTMLResponse:
+    visit_count = runtime_store.increment_counter("web_page_views")
+    template_path = BASE_DIR / "templates" / "register.html"
+    with open(template_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    content = content.replace("{{ app_version }}", APP_VERSION)
+    content = content.replace("{{ visit_count }}", str(visit_count))
+    return HTMLResponse(content)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def page_login(request: Request) -> HTMLResponse:
+    visit_count = runtime_store.increment_counter("web_page_views")
+    template_path = BASE_DIR / "templates" / "login.html"
+    with open(template_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    content = content.replace("{{ app_version }}", APP_VERSION)
+    content = content.replace("{{ visit_count }}", str(visit_count))
+    return HTMLResponse(content)
+
+
+# ── API 路由 ────────────────────────────────────────────────
 
 @app.get("/api/health")
 def api_health() -> dict[str, Any]:
     path = _resolve_db_path()
     if not path.exists():
-        return {
-            "status": "error",
-            "detail": "DBLP SQLite file not found.",
-        }
-    return {
-        "status": "ok",
-    }
+        return {"status": "error", "detail": "DBLP SQLite file not found."}
+    return {"status": "ok"}
+
+
+@app.get("/api/progress")
+def api_progress() -> dict[str, Any]:
+    with _progress_lock:
+        return _progress.copy()
 
 
 @app.get("/api/runtime/stats")
 def api_runtime_stats() -> dict[str, Any]:
     return runtime_store.stats()
+
+
+@app.post("/api/user/register")
+def api_register(payload: RegisterRequest) -> dict:
+    return register_user(payload.username, payload.password, payload.email)
+
+
+@app.post("/api/user/login")
+def api_login(payload: LoginRequest) -> dict:
+    return login_user(payload.username, payload.password)
 
 
 @app.post("/api/search/title")
@@ -260,6 +330,8 @@ def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
         max_candidates=payload.max_candidates,
     )
 
+    _set_progress(status="searching", stage="Searching DBLP", total=len(titles), processed=0, found=0)
+
     started_at = time.perf_counter()
     found_count = 0
     items: list[dict[str, Any]] = []
@@ -272,15 +344,14 @@ def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
             result = _single_search_result(db_path, title, payload.max_candidates)
         except Exception as exc:
             error_message = str(exc)
-            result = {
-                "found": False,
-                "query_title": title,
-            }
+            result = {"found": False, "query_title": title}
 
         duration_ms = max(0, int((time.perf_counter() - item_started_at) * 1000))
         found = bool(result.get("found"))
         if found:
             found_count += 1
+
+        _set_progress(processed=idx, found=found_count)
 
         runtime_store.record_batch_item(
             run_id,
@@ -318,6 +389,8 @@ def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
     runtime_store.increment_counter("batch_search_items_total", delta=len(items))
     runtime_store.increment_counter("batch_search_found_total", delta=found_count)
 
+    _set_progress(status="done", stage="Done", processed=len(items), found=found_count)
+
     return {
         "summary": {
             "run_id": run_id,
@@ -331,52 +404,6 @@ def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
         },
         "items": items,
     }
-
-
-
-class RegisterRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=20)
-    password: str = Field(..., min_length=6)
-    email: str = Field(...)
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-@app.on_event("startup")
-def startup_event():
-    init_user_db()
-
-@app.get("/register")
-def register(request: Request) -> HTMLResponse:
-    visit_count = runtime_store.increment_counter("web_page_views")
-    template_path = BASE_DIR / "templates" / "register.html"
-    with open(template_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    # Replace placeholders manually
-    content = content.replace("{{ app_version }}", APP_VERSION)
-    content = content.replace("{{ visit_count }}", str(visit_count))
-    return HTMLResponse(content)
-    # return register_user(payload.username, payload.password, payload.email)
-
-@app.get("/login")
-def login(request: Request) -> HTMLResponse:
-    visit_count = runtime_store.increment_counter("web_page_views")
-    template_path = BASE_DIR / "templates" / "login.html"
-    with open(template_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    # Replace placeholders manually
-    content = content.replace("{{ app_version }}", APP_VERSION)
-    content = content.replace("{{ visit_count }}", str(visit_count))
-    return HTMLResponse(content)
-
-@app.post("/api/user/register")
-def api_register(payload: RegisterRequest) -> dict:
-    return register_user(payload.username, payload.password, payload.email)
-
-@app.post("/api/user/login")
-def api_login(payload: LoginRequest) -> dict:
-    return login_user(payload.username, payload.password)
 
 
 @app.post("/api/parse/pdf")
@@ -417,10 +444,13 @@ def api_search_pdf_batch(file: UploadFile = File(...)):
             content = file.file.read()
             f.write(content)
 
+        # 阶段1：LLM 解析 PDF
+        _set_progress(status="parsing", stage="Parsing PDF references", total=0, processed=0, found=0)
         references = llm_parse_pdf(str(temp_path))
         titles = [ref.get("title") for ref in references if ref.get("title")]
 
         if not titles:
+            _set_progress(status="done", stage="Done", total=0, processed=0, found=0)
             return {
                 "summary": {
                     "run_id": None,
@@ -444,6 +474,9 @@ def api_search_pdf_batch(file: UploadFile = File(...)):
             max_candidates=max_candidates,
         )
 
+        # 阶段2：DBLP 批量搜索
+        _set_progress(status="searching", stage="Searching DBLP", total=len(titles), processed=0, found=0)
+
         started_at = time.perf_counter()
         found_count = 0
         items: list[dict[str, Any]] = []
@@ -462,6 +495,8 @@ def api_search_pdf_batch(file: UploadFile = File(...)):
             found = bool(result.get("found"))
             if found:
                 found_count += 1
+
+            _set_progress(processed=idx, found=found_count)
 
             runtime_store.record_batch_item(
                 run_id,
@@ -497,6 +532,8 @@ def api_search_pdf_batch(file: UploadFile = File(...)):
         runtime_store.increment_counter("batch_search_items_total", delta=len(items))
         runtime_store.increment_counter("batch_search_found_total", delta=found_count)
 
+        _set_progress(status="done", stage="Done", processed=len(items), found=found_count)
+
         return {
             "summary": {
                 "run_id": run_id,
@@ -513,6 +550,7 @@ def api_search_pdf_batch(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
+        _set_progress(status="error", stage=str(e))
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if temp_path.exists():

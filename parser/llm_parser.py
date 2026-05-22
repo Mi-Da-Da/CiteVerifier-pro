@@ -15,7 +15,7 @@ MAX_RETRY_TIMES = 3
 # LLM API key should be set via environment variable
 # export DASHSCOPE_API_KEY='your_api_key_here'
 if 'DASHSCOPE_API_KEY' not in os.environ:
-    os.environ['DASHSCOPE_API_KEY'] = 'sk-7544ef70b6e04edcb66902259bacba04'
+    os.environ['DASHSCOPE_API_KEY'] = 'sk-06533d0f0b184a53b5d436f2d7c2e37e'
 
 def llm_parse(text: str) -> List[Dict]:
     """
@@ -114,13 +114,15 @@ async def llm_str2ref(raw_str: str, semaphore: asyncio.Semaphore) -> Dict:
         Please start extracting the reference:
     """
 
-    url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    #url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    url = "https://api.deepseek.com/chat/completions"
     headers = {
         "Authorization": f"Bearer {os.getenv('DASHSCOPE_API_KEY')}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "qwen-flash",
+        #"model": "qwen-flash",
+        "model": "deepseek-chat",
         "messages": [
             {"role": "system", "content": "You are a helpful assistant that extracts references from academic papers."},
             {"role": "user", "content": prompt}
@@ -153,6 +155,8 @@ async def llm_str2ref(raw_str: str, semaphore: asyncio.Semaphore) -> Dict:
                 print(f"Failed to process reference after retries: {raw_str}")
                 return {}
     return {}
+
+
 
 # if __name__ == "__main__":
 #     sample_text = """
