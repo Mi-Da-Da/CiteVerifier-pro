@@ -11,7 +11,7 @@ export function SiteNav() {
   const searchRef = useRef<HTMLDivElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   const t = useT();
-  const { email, logout } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
 
   useEffect(() => {
     if (!searchOpen) return;
@@ -112,7 +112,7 @@ export function SiteNav() {
         </div>
 
         <div className="flex items-center gap-2">
-          {email ? (
+          {isAuthenticated ? (
             <div
               ref={accountRef}
               className="animate-blur-fade-up relative hidden sm:block"
@@ -120,7 +120,7 @@ export function SiteNav() {
             >
               <button onClick={() => setAccountOpen(o => !o)} className={pillCls} aria-label="Account">
                 <User size={13} />
-                <span className="max-w-[180px] truncate">{email}</span>
+                <span className="max-w-[180px] truncate">{user?.username}</span>
                 <ChevronDown size={12} className={`transition-transform ${accountOpen ? "rotate-180" : ""}`} />
               </button>
               <div
@@ -128,7 +128,7 @@ export function SiteNav() {
                   accountOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none"
                 }`}
               >
-                <div className="px-3 py-2 text-[11px] text-gray-400 truncate border-b border-white/10 mb-1">{email}</div>
+                <div className="px-3 py-2 text-[11px] text-gray-400 truncate border-b border-white/10 mb-1">{user?.username}</div>
                 <button
                   onClick={() => { logout(); setAccountOpen(false); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg hover:bg-white/10 transition-colors"
@@ -210,12 +210,12 @@ export function SiteNav() {
           >
             <HelpCircle size={16} /> {helpLabel}
           </Link>
-          {email ? (
+          {isAuthenticated ? (
             <button
               onClick={() => { logout(); setOpen(false); }}
               className="sm:hidden mt-2 pt-4 border-t border-gray-800 py-3 px-3 rounded-lg hover:bg-gray-800/50 flex items-center gap-2 text-left"
             >
-              <LogOut size={16} /> <span className="truncate">{email}</span>
+              <LogOut size={16} /> <span className="truncate">{user?.username}</span>
             </button>
           ) : (
             <Link

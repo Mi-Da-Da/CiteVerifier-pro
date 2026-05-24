@@ -5,6 +5,7 @@ import { Check, Loader2 } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
+import { apiClient, SearchResult } from "@/lib/api-client";
 
 const searchSchema = z.object({ title: z.string().default("") });
 
@@ -25,6 +26,7 @@ function DetectPage() {
   const t = useT();
   const [progress, setProgress] = useState(0);
   const [failed, setFailed] = useState(false);
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
 
   const stages = [
     { until: 25, text: t({ zh: "检索学术数据库", en: "Searching academic databases" }) },
@@ -38,21 +40,73 @@ function DetectPage() {
       navigate({ to: "/" });
       return;
     }
-    const start = Date.now();
-    const duration = 3500;
+
+    let isMounted = true;
     let raf = 0;
-    const tick = () => {
-      const p = Math.min(100, ((Date.now() - start) / duration) * 100);
-      setProgress(p);
-      if (p < 100) raf = requestAnimationFrame(tick);
-      else {
-        const seed = title.length;
-        const status = seed % 7 === 0 ? "unknown" : seed % 3 === 0 ? "fake" : "success";
-        setTimeout(() => navigate({ to: "/result", search: { title, status } }), 250);
+    
+    const searchAndAnimate = async () => {
+      try {
+        const animationStart = Date.now();
+        const duration = 2500;
+
+        // 开始动画
+        const animate = () => {
+          const p = Math.min(90, ((Date.now() - animationStart) / duration) * 100);
+          if (isMounted) {
+            setProgress(p);
+          }
+          if (p < 90 && isMounted) {
+            raf = requestAnimationFrame(animate);
+          }
+        };
+        animate();
+
+        // 同时调用后端API
+        const result = await apiClient.searchTitle({ title });
+        if (isMounted) {
+          setSearchResult(result);
+        }
+
+        // 完成动画
+        const finishAnim = () => {
+          const p = Math.min(100, ((Date.now() - animationStart) / duration) * 100);
+          if (isMounted) {
+            setProgress(p);
+          }
+          if (p < 100 && isMounted) {
+            raf = requestAnimationFrame(finishAnim);
+          } else if (isMounted) {
+            const status = result.found ? "success" : "fake";
+            setTimeout(() => {
+              navigate({ 
+                to: "/result", 
+                search: { 
+                  title, 
+                  status,
+                  dblp_title: result.dblp_title || "",
+                  dblp_id: result.dblp_id?.toString() || "",
+                  year: result.year?.toString() || "",
+                  venue: result.venue || "",
+                  similarity: result.dblp_title_similarity?.toString() || ""
+                } 
+              });
+            }, 300);
+          }
+        };
+        finishAnim();
+      } catch (error) {
+        if (isMounted) {
+          setFailed(true);
+        }
       }
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+
+    searchAndAnimate();
+
+    return () => {
+      isMounted = false;
+      cancelAnimationFrame(raf);
+    };
   }, [title, navigate]);
 
   const stage = stages.find(s => progress <= s.until) ?? stages[stages.length - 1];

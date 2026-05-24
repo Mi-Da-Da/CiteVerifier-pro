@@ -5,6 +5,7 @@ import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
+import { apiClient, LoginResponse } from "@/lib/api-client";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -24,15 +25,35 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const valid = username.trim().length > 0 && password.length >= 6;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) return;
     setErr("");
-    login(username.trim());
-    navigate({ to: "/" });
+    setLoading(true);
+
+    try {
+      const result = await apiClient.login({
+        username: username.trim(),
+        password,
+      }) as LoginResponse;
+
+      if (result.success) {
+        const userId = result.user_id || 0;
+        const userName = result.username || username.trim();
+        login(userName, userId);
+        navigate({ to: "/" });
+      } else {
+        setErr(result.message || t({ zh: "登录失败", en: "Login failed" }));
+      }
+    } catch (error) {
+      setErr(t({ zh: "网络错误，请稍后重试", en: "Network error, please try again" }));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -80,10 +101,10 @@ function LoginPage() {
 
           <button
             type="submit"
-            disabled={!valid}
+            disabled={!valid || loading}
             className="w-full mt-6 bg-white text-black rounded-xl font-medium py-3 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {t({ zh: "登录", en: "Sign in" })}
+            {loading ? t({ zh: "登录中…", en: "Signing in…" }) : t({ zh: "登录", en: "Sign in" })}
           </button>
 
           <div className="flex items-center justify-between mt-6 text-sm text-gray-400">
