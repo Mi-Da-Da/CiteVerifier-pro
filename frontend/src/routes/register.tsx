@@ -4,6 +4,8 @@ import { Eye, EyeOff } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
+import { apiClient } from "@/lib/api-client";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/register")({
   component: RegisterPage,
@@ -23,24 +25,46 @@ function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [apiErr, setApiErr] = useState("");
 
   const usernameOk = /^[A-Za-z0-9_]{3,20}$/.test(username);
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  const passwordOk = password.length >= 8 && /[A-Za-z]/.test(password) && /\d/.test(password);
+  const passwordOk = password.length >= 6;
   const confirmOk = confirm.length > 0 && confirm === password;
   const valid = usernameOk && emailOk && passwordOk && confirmOk;
 
   const errs = {
     username: username && !usernameOk ? t({ zh: "3–20 位字母、数字或下划线。", en: "3–20 letters, numbers or underscores." }) : "",
     email: email && !emailOk ? t({ zh: "邮箱格式不正确。", en: "Email format isn't valid." }) : "",
-    password: password && !passwordOk ? t({ zh: "至少 8 位，含字母与数字。", en: "At least 8 characters, with letters and numbers." }) : "",
+    password: password && !passwordOk ? t({ zh: "至少 6 位。", en: "At least 6 characters." }) : "",
     confirm: confirm && !confirmOk ? t({ zh: "两次密码不一致。", en: "Passwords don't match." }) : "",
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) return;
-    navigate({ to: "/login" });
+    setApiErr("");
+    setLoading(true);
+
+    try {
+      const result = await apiClient.register({
+        username,
+        password,
+        email,
+      });
+
+      if (result.success) {
+        toast.success(t({ zh: "注册成功！请登录", en: "Registration successful! Please login" }));
+        navigate({ to: "/login" });
+      } else {
+        setApiErr(result.message || t({ zh: "注册失败", en: "Registration failed" }));
+      }
+    } catch (error) {
+      setApiErr(t({ zh: "网络错误，请稍后重试", en: "Network error, please try again" }));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -80,12 +104,14 @@ function RegisterPage() {
           <Field label={t({ zh: "确认密码", en: "Confirm password" })} value={confirm} onChange={setConfirm}
                  placeholder={t({ zh: "再次输入密码", en: "Enter password again" })} error={errs.confirm} type={show ? "text" : "password"} />
 
+          {apiErr && <p className="text-sm text-red-400 mb-4">{apiErr}</p>}
+          
           <button
             type="submit"
-            disabled={!valid}
+            disabled={!valid || loading}
             className="w-full mt-4 bg-white text-black rounded-xl font-medium py-3 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {t({ zh: "注册", en: "Create" })}
+            {loading ? t({ zh: "注册中…", en: "Creating…" }) : t({ zh: "注册", en: "Create" })}
           </button>
 
           <div className="text-center mt-6 text-sm text-gray-400">

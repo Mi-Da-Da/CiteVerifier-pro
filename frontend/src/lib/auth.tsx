@@ -1,35 +1,52 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 
 type AuthCtx = {
-  email: string | null;
-  login: (email: string) => void;
+  user: { username: string; userId: number } | null;
+  isAuthenticated: boolean;
+  login: (username: string, userId: number) => void;
   logout: () => void;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
-const KEY = "ghostcite.auth.email";
+const USER_KEY = "ghostcite.auth.user";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [email, setEmail] = useState<string | null>(null);
+  const [user, setUser] = useState<{ username: string; userId: number } | null>(null);
 
   useEffect(() => {
     try {
-      const v = localStorage.getItem(KEY);
-      if (v) setEmail(v);
+      const v = localStorage.getItem(USER_KEY);
+      if (v) {
+        setUser(JSON.parse(v));
+      }
     } catch {}
   }, []);
 
-  const login = useCallback((e: string) => {
-    setEmail(e);
-    try { localStorage.setItem(KEY, e); } catch {}
+  const login = useCallback((username: string, userId: number) => {
+    const userData = { username, userId };
+    setUser(userData);
+    try {
+      localStorage.setItem(USER_KEY, JSON.stringify(userData));
+    } catch {}
   }, []);
 
   const logout = useCallback(() => {
-    setEmail(null);
-    try { localStorage.removeItem(KEY); } catch {}
+    setUser(null);
+    try {
+      localStorage.removeItem(USER_KEY);
+    } catch {}
   }, []);
 
-  return <Ctx.Provider value={{ email, login, logout }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{
+      user,
+      isAuthenticated: user !== null,
+      login,
+      logout
+    }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export function useAuth() {
