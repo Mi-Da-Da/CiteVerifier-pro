@@ -6,7 +6,6 @@ import asyncio
 from weakref import ref
 import aiohttp
 
-from openai import OpenAI
 from parser.format.utils import clean_text, extract_id
 from parser.utils.pdf_reader import pdf_to_text
 

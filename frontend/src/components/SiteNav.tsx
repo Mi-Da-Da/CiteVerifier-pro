@@ -11,7 +11,7 @@ export function SiteNav() {
   const searchRef = useRef<HTMLDivElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   const t = useT();
-  const { user, logout, isAuthenticated } = useAuth();
+  const { email, logout } = useAuth();
 
   useEffect(() => {
     if (!searchOpen) return;
@@ -31,17 +31,12 @@ export function SiteNav() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [accountOpen]);
 
-  const navLinks = [
-    { label: t({ zh: "首页", en: "Home" }), to: "/" as const },
-    { label: t({ zh: "英文文献", en: "English" }), to: "/english-literature" as const },
-    { label: t({ zh: "中文文献", en: "Chinese" }), to: "/chinese-literature" as const },
-  ];
-
   const searchOptions = [
     { label: t({ zh: "简单检索", en: "Simple Search" }), to: "/simple-search" as const },
     { label: t({ zh: "批量检索", en: "Batch Search" }), to: "/advanced-search" as const },
   ];
 
+  const homeLabel = t({ zh: "首页", en: "Home" });
   const loginLabel = t({ zh: "登录", en: "Sign in" });
   const helpLabel = t({ zh: "帮助", en: "Help" });
   const searchLabel = t({ zh: "检索", en: "Search" });
@@ -53,38 +48,33 @@ export function SiteNav() {
 
   return (
     <>
-      <nav className="relative z-50 flex items-center justify-between px-4 sm:px-6 md:px-12 py-4 md:py-6">
+      <nav className="relative z-50 h-[72px] md:h-[88px] px-4 sm:px-6 md:px-12">
         <Link
           to="/"
-          className="animate-blur-fade-up h-8 md:h-10 flex items-center text-xl md:text-2xl font-semibold tracking-[-0.04em]"
-          style={{ animationDelay: "0ms" }}
+          className="absolute left-4 sm:left-6 md:left-12 top-1/2 -translate-y-1/2 h-8 md:h-10 flex items-center text-xl md:text-2xl font-semibold tracking-[-0.04em]"
         >
           GhostCite
         </Link>
 
-        <div className="hidden lg:flex items-center gap-8">
-          {navLinks.map((link, i) => (
-            <Link
-              key={link.to + link.label}
-              to={link.to}
-              className="animate-blur-fade-up text-sm hover:text-gray-300 transition-colors"
-              activeProps={{ className: "text-white" }}
-              style={{ animationDelay: `${100 + i * 50}ms` }}
-            >
-              {link.label}
-            </Link>
-          ))}
+        <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-8 h-9">
+          <Link
+            to="/"
+            className="text-sm hover:text-gray-300 transition-colors flex items-center h-9 leading-none"
+            activeProps={{ className: "text-white" }}
+          >
+            {homeLabel}
+          </Link>
 
-          <div ref={searchRef} className="relative animate-blur-fade-up" style={{ animationDelay: "250ms" }}>
+          <div ref={searchRef} className="relative flex items-center h-9">
             <button
               onClick={() => setSearchOpen(o => !o)}
-              className="text-sm hover:text-gray-300 transition-colors flex items-center gap-1"
+              className="text-sm hover:text-gray-300 transition-colors flex items-center gap-1 h-9 leading-none"
             >
               {searchLabel}
               <ChevronDown size={13} className={`transition-transform ${searchOpen ? "rotate-180" : ""}`} />
             </button>
             <div
-              className={`absolute left-0 top-full mt-3 w-44 liquid-glass rounded-2xl p-1.5 transition-all duration-200 ${
+              className={`!absolute left-0 top-full mt-3 w-44 liquid-glass rounded-2xl p-1.5 transition-all duration-200 ${
                 searchOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none"
               }`}
             >
@@ -101,34 +91,43 @@ export function SiteNav() {
             </div>
           </div>
 
+          <div className="flex items-center h-9">
+            <LanguageToggle />
+          </div>
+
           <Link
             to="/more"
-            className="animate-blur-fade-up text-sm hover:text-gray-300 transition-colors"
+            className="text-sm hover:text-gray-300 transition-colors flex items-center h-9 leading-none"
             activeProps={{ className: "text-white" }}
-            style={{ animationDelay: "300ms" }}
           >
             {moreLabel}
           </Link>
         </div>
 
-        <div className="flex items-center gap-2">
-          {isAuthenticated ? (
+        <div className="absolute right-4 sm:right-6 md:right-12 top-1/2 -translate-y-1/2 flex items-center gap-2 h-9">
+          <Link
+            to="/more"
+            className={`hidden sm:flex ${pillCls}`}
+          >
+            <HelpCircle size={13} />
+            {helpLabel}
+          </Link>
+          {email ? (
             <div
               ref={accountRef}
-              className="animate-blur-fade-up relative hidden sm:block"
-              style={{ animationDelay: "320ms" }}
+              className="relative hidden sm:block"
             >
               <button onClick={() => setAccountOpen(o => !o)} className={pillCls} aria-label="Account">
                 <User size={13} />
-                <span className="max-w-[180px] truncate">{user?.username}</span>
+                <span className="max-w-[180px] truncate">{email}</span>
                 <ChevronDown size={12} className={`transition-transform ${accountOpen ? "rotate-180" : ""}`} />
               </button>
               <div
-                className={`absolute right-0 top-full mt-2 w-48 liquid-glass rounded-2xl p-1.5 z-50 transition-all duration-200 ${
+                className={`!absolute right-0 top-full mt-2 w-48 liquid-glass rounded-2xl p-1.5 z-50 transition-all duration-200 ${
                   accountOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none"
                 }`}
               >
-                <div className="px-3 py-2 text-[11px] text-gray-400 truncate border-b border-white/10 mb-1">{user?.username}</div>
+                <div className="px-3 py-2 text-[11px] text-gray-400 truncate border-b border-white/10 mb-1">{email}</div>
                 <button
                   onClick={() => { logout(); setAccountOpen(false); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg hover:bg-white/10 transition-colors"
@@ -140,52 +139,37 @@ export function SiteNav() {
           ) : (
             <Link
               to="/login"
-              className={`animate-blur-fade-up hidden sm:flex ${pillCls}`}
-              style={{ animationDelay: "320ms" }}
+              className={`hidden sm:flex ${pillCls}`}
             >
               <User size={13} />
               {loginLabel}
             </Link>
           )}
-          <div className="animate-blur-fade-up hidden sm:block" style={{ animationDelay: "340ms" }}>
-            <LanguageToggle />
-          </div>
-          <Link
-            to="/more"
-            className={`animate-blur-fade-up hidden sm:flex ${pillCls}`}
-            style={{ animationDelay: "360ms" }}
-          >
-            <HelpCircle size={13} />
-            {helpLabel}
-          </Link>
           <button
             onClick={() => setOpen(o => !o)}
-            className="animate-blur-fade-up lg:hidden flex items-center justify-center liquid-glass w-9 h-9 rounded-full relative"
-            style={{ animationDelay: "380ms" }}
+            className="md:hidden flex items-center justify-center liquid-glass w-9 h-9 rounded-full relative"
             aria-label="Menu"
           >
             <Menu size={18} className={`absolute transition-all duration-500 ${open ? "rotate-180 opacity-0" : "opacity-100"}`} />
             <X size={18} className={`absolute transition-all duration-500 ${open ? "opacity-100" : "-rotate-180 opacity-0"}`} />
           </button>
         </div>
+
       </nav>
 
       <div
-        className={`lg:hidden absolute top-[72px] left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-lg border-t border-b border-gray-800 shadow-2xl transition-all duration-500 ${
+        className={`md:hidden absolute top-[72px] left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-lg border-t border-b border-gray-800 shadow-2xl transition-all duration-500 ${
           open ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0 pointer-events-none"
         }`}
       >
         <div className="flex flex-col p-4 gap-1">
-          {navLinks.map((link, i) => (
-            <Link
-              key={`${link.to}-${i}`}
-              to={link.to}
-              onClick={() => setOpen(false)}
-              className="py-3 px-3 rounded-lg hover:bg-gray-800/50 transition-all"
-            >
-              {link.label}
-            </Link>
-          ))}
+          <Link
+            to="/"
+            onClick={() => setOpen(false)}
+            className="py-3 px-3 rounded-lg hover:bg-gray-800/50 transition-all"
+          >
+            {homeLabel}
+          </Link>
           {searchOptions.map((opt) => (
             <Link
               key={opt.to}
@@ -210,12 +194,12 @@ export function SiteNav() {
           >
             <HelpCircle size={16} /> {helpLabel}
           </Link>
-          {isAuthenticated ? (
+          {email ? (
             <button
               onClick={() => { logout(); setOpen(false); }}
               className="sm:hidden mt-2 pt-4 border-t border-gray-800 py-3 px-3 rounded-lg hover:bg-gray-800/50 flex items-center gap-2 text-left"
             >
-              <LogOut size={16} /> <span className="truncate">{user?.username}</span>
+              <LogOut size={16} /> <span className="truncate">{email}</span>
             </button>
           ) : (
             <Link

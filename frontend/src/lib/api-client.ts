@@ -40,6 +40,7 @@ export interface PdfParseResult {
 export interface PdfBatchSearchResult {
   summary: {
     run_id: string | null;
+    file_count?: number;
     total_input: number;
     total_processed: number;
     found_count: number;
@@ -58,10 +59,12 @@ export interface PdfBatchSearchResult {
     venue?: string;
     pub_type?: string;
     duration_ms: number;
+    source_file?: string;
     error_message?: string;
   }>;
   references?: Array<{
     title?: string;
+    source_file?: string;
     [key: string]: any;
   }>;
 }
@@ -82,6 +85,17 @@ export interface RegisterResponse extends ApiResponse {
 }
 
 class ApiClient {
+  private async readError(response: Response): Promise<string> {
+    const text = await response.text();
+    if (!text) return `HTTP ${response.status}`;
+    try {
+      const data = JSON.parse(text);
+      return data.detail || data.error || data.message || text;
+    } catch {
+      return text;
+    }
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -96,8 +110,7 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || `HTTP ${response.status}`);
+      throw new Error(await this.readError(response));
     }
 
     return response.json();
@@ -134,11 +147,12 @@ class ApiClient {
 
   /**
    * Parse PDF file to extract references
-   * @param file - PDF file (File object from input)
+   * @param files - PDF file(s) from input
    */
-  async parsePdf(file: File): Promise<PdfParseResult> {
+  async parsePdf(files: File | File[]): Promise<PdfParseResult> {
     const formData = new FormData();
-    formData.append("file", file);
+    const list = Array.isArray(files) ? files : [files];
+    list.forEach(file => formData.append("files", file));
 
     const response = await fetch(`${API_BASE}/parse/pdf`, {
       method: "POST",
@@ -146,8 +160,7 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || `HTTP ${response.status}`);
+      throw new Error(await this.readError(response));
     }
 
     return response.json();
@@ -155,11 +168,12 @@ class ApiClient {
 
   /**
    * Parse PDF and search all extracted titles in DBLP
-   * @param file - PDF file (File object from input)
+   * @param files - PDF file(s) from input
    */
-  async searchPdfBatch(file: File): Promise<PdfBatchSearchResult> {
+  async searchPdfBatch(files: File | File[]): Promise<PdfBatchSearchResult> {
     const formData = new FormData();
-    formData.append("file", file);
+    const list = Array.isArray(files) ? files : [files];
+    list.forEach(file => formData.append("files", file));
 
     const response = await fetch(`${API_BASE}/search/pdf/batch`, {
       method: "POST",
@@ -167,8 +181,7 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || `HTTP ${response.status}`);
+      throw new Error(await this.readError(response));
     }
 
     return response.json();
