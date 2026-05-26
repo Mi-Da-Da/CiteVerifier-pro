@@ -20,6 +20,8 @@ import { Route as ChineseLiteratureRouteImport } from './routes/chinese-literatu
 import { Route as AdvancedSearchRouteImport } from './routes/advanced-search'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as ApiParsePdfRouteImport } from './routes/api/parse/pdf'
+import { Route as ApiSearchPdfBatchRouteImport } from './routes/api/search/pdf/batch'
 
 const SimpleSearchRoute = SimpleSearchRouteImport.update({
   id: '/simple-search',
@@ -76,6 +78,16 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiParsePdfRoute = ApiParsePdfRouteImport.update({
+  id: '/api/parse/pdf',
+  path: '/api/parse/pdf',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSearchPdfBatchRoute = ApiSearchPdfBatchRouteImport.update({
+  id: '/api/search/pdf/batch',
+  path: '/api/search/pdf/batch',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,6 +101,8 @@ export interface FileRoutesByFullPath {
   '/result': typeof ResultRoute
   '/simple-search': typeof SimpleSearchRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/parse/pdf': typeof ApiParsePdfRoute
+  '/api/search/pdf/batch': typeof ApiSearchPdfBatchRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +116,8 @@ export interface FileRoutesByTo {
   '/result': typeof ResultRoute
   '/simple-search': typeof SimpleSearchRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/parse/pdf': typeof ApiParsePdfRoute
+  '/api/search/pdf/batch': typeof ApiSearchPdfBatchRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +132,8 @@ export interface FileRoutesById {
   '/result': typeof ResultRoute
   '/simple-search': typeof SimpleSearchRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/parse/pdf': typeof ApiParsePdfRoute
+  '/api/search/pdf/batch': typeof ApiSearchPdfBatchRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +149,8 @@ export interface FileRouteTypes {
     | '/result'
     | '/simple-search'
     | '/api/chat'
+    | '/api/parse/pdf'
+    | '/api/search/pdf/batch'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +164,8 @@ export interface FileRouteTypes {
     | '/result'
     | '/simple-search'
     | '/api/chat'
+    | '/api/parse/pdf'
+    | '/api/search/pdf/batch'
   id:
     | '__root__'
     | '/'
@@ -157,6 +179,8 @@ export interface FileRouteTypes {
     | '/result'
     | '/simple-search'
     | '/api/chat'
+    | '/api/parse/pdf'
+    | '/api/search/pdf/batch'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +195,8 @@ export interface RootRouteChildren {
   ResultRoute: typeof ResultRoute
   SimpleSearchRoute: typeof SimpleSearchRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiParsePdfRoute: typeof ApiParsePdfRoute
+  ApiSearchPdfBatchRoute: typeof ApiSearchPdfBatchRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -252,6 +278,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/parse/pdf': {
+      id: '/api/parse/pdf'
+      path: '/api/parse/pdf'
+      fullPath: '/api/parse/pdf'
+      preLoaderRoute: typeof ApiParsePdfRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/search/pdf/batch': {
+      id: '/api/search/pdf/batch'
+      path: '/api/search/pdf/batch'
+      fullPath: '/api/search/pdf/batch'
+      preLoaderRoute: typeof ApiSearchPdfBatchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -267,6 +307,8 @@ const rootRouteChildren: RootRouteChildren = {
   ResultRoute: ResultRoute,
   SimpleSearchRoute: SimpleSearchRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiParsePdfRoute: ApiParsePdfRoute,
+  ApiSearchPdfBatchRoute: ApiSearchPdfBatchRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
