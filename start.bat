@@ -5,7 +5,7 @@ echo ========================================
 echo.
 
 REM Check Python
-python --version >nul 2>&1
+py --version >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Python not found. Please install Python 3.10+
     pause
@@ -59,7 +59,7 @@ echo.
 
 REM Start backend server
 echo [1/2] Starting backend server (port 8092)...
-start "CiteVerifier Backend" cmd /k "python -m uvicorn web_app:app --host 0.0.0.0 --port 8092"
+start "CiteVerifier Backend" cmd /k "py -m uvicorn web_app:app --host 0.0.0.0 --port 8092"
 
 REM Wait for backend to start
 timeout /t 3 /nobreak >nul
