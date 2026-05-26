@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { CheckCircle2, AlertTriangle, HelpCircle, Copy, RotateCcw, ExternalLink } from "lucide-react";
+import { CheckCircle2, AlertTriangle, HelpCircle, Copy, RotateCcw } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
@@ -9,11 +9,6 @@ import { useT } from "@/lib/i18n";
 const searchSchema = z.object({
   title: z.string().default(""),
   status: z.enum(["success", "fake", "unknown"]).default("unknown"),
-  dblp_title: z.string().optional(),
-  dblp_id: z.string().optional(),
-  year: z.string().optional(),
-  venue: z.string().optional(),
-  similarity: z.string().optional(),
 });
 
 export const Route = createFileRoute("/result")({
@@ -33,8 +28,7 @@ function fmt(d: Date) {
 }
 
 function ResultPage() {
-  const search = Route.useSearch();
-  const { title, status, dblp_title, dblp_id, year, venue, similarity } = search;
+  const { title, status } = Route.useSearch();
   const navigate = useNavigate();
   const t = useT();
   const [time] = useState(() => fmt(new Date()));
@@ -72,11 +66,7 @@ function ResultPage() {
 
   const copy = async () => {
     try {
-      let text = `【${meta.chip}】${title}\n${t({ zh: "时间", en: "Time" })}: ${time}`;
-      if (status === "success" && dblp_title) {
-        text += `\n${t({ zh: "匹配标题", en: "Matched title" })}: ${dblp_title}`;
-      }
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(`【${meta.chip}】${title}\n${t({ zh: "时间", en: "Time" })}: ${time}`);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {}
@@ -104,51 +94,13 @@ function ResultPage() {
               <div className="text-base sm:text-lg break-words whitespace-pre-wrap">{title || t({ zh: "（空）", en: "(empty)" })}</div>
             </div>
 
-            {status === "success" && (
-              <div className="liquid-glass rounded-2xl p-5 mb-5 bg-emerald-900/10 border border-emerald-500/20">
-                <div className="text-xs text-emerald-400 mb-3 flex items-center gap-2">
-                  <CheckCircle2 size={14} /> {t({ zh: "匹配到的论文", en: "Matched paper" })}
-                </div>
-                {dblp_title && (
-                  <div className="mb-3">
-                    <div className="text-xs text-gray-400 mb-1">{t({ zh: "标题", en: "Title" })}</div>
-                    <div className="text-sm break-words">{dblp_title}</div>
-                  </div>
-                )}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {year && (
-                    <InfoTile label={t({ zh: "年份", en: "Year" })} value={year} />
-                  )}
-                  {venue && (
-                    <InfoTile label={t({ zh: "来源", en: "Venue" })} value={venue} />
-                  )}
-                  {similarity && (
-                    <InfoTile 
-                      label={t({ zh: "相似度", en: "Similarity" })} 
-                      value={`${(parseFloat(similarity) * 100).toFixed(1)}%`} 
-                    />
-                  )}
-                </div>
-                {dblp_id && (
-                  <a 
-                    href={`https://dblp.org/rec/${dblp_id}.html`} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="mt-4 inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
-                  >
-                    <ExternalLink size={14} /> {t({ zh: "在 DBLP 查看", en: "View on DBLP" })}
-                  </a>
-                )}
-              </div>
-            )}
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
               <InfoTile label={t({ zh: "检测时间", en: "Time" })} value={time} />
               <InfoTile
                 label={t({ zh: "数据来源", en: "Sources" })}
                 value={t({
-                  zh: "DBLP 学术数据库",
-                  en: "DBLP academic database",
+                  zh: "核心学术数据库、期刊索引、开放获取库",
+                  en: "Core academic databases, journal indexes, open-access archives",
                 })}
               />
             </div>
