@@ -5,6 +5,7 @@ import { Check, Loader2 } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
+import { apiClient } from "@/lib/api-client";
 
 const searchSchema = z.object({ title: z.string().default("") });
 
@@ -27,32 +28,68 @@ function DetectPage() {
   const [failed, setFailed] = useState(false);
 
   const stages = [
-    { until: 25, text: t({ zh: "检索学术数据库", en: "Searching academic databases" }) },
-    { until: 50, text: t({ zh: "比对学术索引", en: "Matching against indexes" }) },
-    { until: 75, text: t({ zh: "分析引用真实性", en: "Analyzing authenticity" }) },
+    { until: 30, text: t({ zh: "检索学术数据库", en: "Searching academic databases" }) },
+    { until: 60, text: t({ zh: "比对学术索引", en: "Matching against indexes" }) },
+    { until: 85, text: t({ zh: "分析引用真实性", en: "Analyzing authenticity" }) },
     { until: 100, text: t({ zh: "生成检测报告", en: "Compiling report" }) },
   ];
 
   useEffect(() => {
-    if (!title) {
-      navigate({ to: "/" });
-      return;
-    }
-    const start = Date.now();
-    const duration = 3500;
+    if (!title) { navigate({ to: "/" }); return; }
+
+    let cancelled = false;
     let raf = 0;
-    const tick = () => {
-      const p = Math.min(100, ((Date.now() - start) / duration) * 100);
-      setProgress(p);
-      if (p < 100) raf = requestAnimationFrame(tick);
-      else {
-        const seed = title.length;
-        const status = seed % 7 === 0 ? "unknown" : seed % 3 === 0 ? "fake" : "success";
-        setTimeout(() => navigate({ to: "/result", search: { title, status } }), 250);
-      }
+    const startTime = Date.now();
+
+    // 动画爬到 85% 等待 API
+    const animateTo85 = () => {
+      const elapsed = Date.now() - startTime;
+      const p = Math.min(85, (elapsed / 4000) * 85);
+      if (!cancelled) setProgress(p);
+      if (p < 85 && !cancelled) raf = requestAnimationFrame(animateTo85);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(animateTo85);
+
+    // 同时调后端
+    apiClient.searchTitle({ title })
+      .then(data => {
+        if (cancelled) return;
+        cancelAnimationFrame(raf);
+
+        // 跑到 100%
+        const finish = () => {
+          setProgress(prev => {
+            if (prev >= 100) return 100;
+            const next = Math.min(100, prev + 2);
+            if (next < 100) raf = requestAnimationFrame(finish);
+            return next;
+          });
+        };
+        raf = requestAnimationFrame(finish);
+
+        setTimeout(() => {
+          if (cancelled) return;
+          const found = data.found === true;
+          const sim = data.dblp_title_similarity ?? null;
+          let status: "success" | "fake" | "unknown";
+          if (found && sim !== null && sim >= 0.8) status = "success";
+          else if (found) status = "unknown";
+          else status = "fake";
+
+          navigate({
+            to: "/result",
+            search: {
+              title,
+              status,
+              matchedTitle: data.dblp_title ?? "",
+              similarity: sim !== null ? String(Math.round(sim * 100)) : "",
+            },
+          });
+        }, 600);
+      })
+      .catch(() => { if (!cancelled) setFailed(true); });
+
+    return () => { cancelled = true; cancelAnimationFrame(raf); };
   }, [title, navigate]);
 
   const stage = stages.find(s => progress <= s.until) ?? stages[stages.length - 1];
@@ -74,7 +111,7 @@ function DetectPage() {
               </h1>
               <p className="text-sm text-gray-400 mb-8 break-all line-clamp-2">「{title}」</p>
 
-              <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden mb-3 relative">
+              <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden mb-3">
                 <div
                   className="h-full bg-gradient-to-r from-white/70 to-white rounded-full transition-all duration-150 ease-linear"
                   style={{ width: `${progress}%` }}
@@ -92,11 +129,9 @@ function DetectPage() {
                   const active = !done && progress >= prevUntil;
                   return (
                     <li key={s.text} className="flex items-center gap-3 text-sm">
-                      <span
-                        className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                          done ? "bg-white text-black" : active ? "bg-white/10 text-white" : "bg-white/5 text-gray-500"
-                        }`}
-                      >
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                        done ? "bg-white text-black" : active ? "bg-white/10 text-white" : "bg-white/5 text-gray-500"
+                      }`}>
                         {done ? <Check size={12} /> : active ? <Loader2 size={12} className="animate-spin" /> : <span className="w-1 h-1 rounded-full bg-current" />}
                       </span>
                       <span className={done ? "text-white" : active ? "text-gray-200" : "text-gray-500"}>{s.text}</span>

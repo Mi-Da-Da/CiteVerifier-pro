@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Menu, X, User, ChevronDown, HelpCircle, LogOut } from "lucide-react";
+import { Menu, X, User, ChevronDown, HelpCircle, LogOut, Clock } from "lucide-react";
 import { useT, LanguageToggle } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 
@@ -34,6 +34,7 @@ export function SiteNav() {
   const searchOptions = [
     { label: t({ zh: "简单检索", en: "Simple Search" }), to: "/simple-search" as const },
     { label: t({ zh: "批量检索", en: "Batch Search" }), to: "/advanced-search" as const },
+    { label: t({ zh: "历史记录", en: "History" }), to: "/history" as const, icon: Clock },
   ];
 
   const homeLabel = t({ zh: "首页", en: "Home" });
@@ -43,7 +44,6 @@ export function SiteNav() {
   const moreLabel = t({ zh: "更多", en: "More" });
   const logoutLabel = t({ zh: "退出登录", en: "Sign out" });
 
-  // Shared pill style so login / account / language / help all align in height.
   const pillCls = "liquid-glass rounded-full px-3.5 h-9 text-xs font-medium tracking-wide hover:bg-white/10 transition-colors flex items-center gap-1.5";
 
   return (
@@ -56,6 +56,7 @@ export function SiteNav() {
           GhostCite
         </Link>
 
+        {/* 桌面端中间导航 */}
         <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-8 h-9">
           <Link
             to="/"
@@ -83,8 +84,9 @@ export function SiteNav() {
                   key={opt.to}
                   to={opt.to}
                   onClick={() => setSearchOpen(false)}
-                  className="block px-3 py-2 text-sm rounded-lg hover:bg-white/10 transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg hover:bg-white/10 transition-colors"
                 >
+                  {opt.icon && <opt.icon size={13} className="text-gray-400" />}
                   {opt.label}
                 </Link>
               ))}
@@ -104,19 +106,14 @@ export function SiteNav() {
           </Link>
         </div>
 
+        {/* 桌面端右侧按钮 */}
         <div className="absolute right-4 sm:right-6 md:right-12 top-1/2 -translate-y-1/2 flex items-center gap-2 h-9">
-          <Link
-            to="/more"
-            className={`hidden sm:flex ${pillCls}`}
-          >
+          <Link to="/more" className={`hidden sm:flex ${pillCls}`}>
             <HelpCircle size={13} />
             {helpLabel}
           </Link>
           {email ? (
-            <div
-              ref={accountRef}
-              className="relative hidden sm:block"
-            >
+            <div ref={accountRef} className="relative hidden sm:block">
               <button onClick={() => setAccountOpen(o => !o)} className={pillCls} aria-label="Account">
                 <User size={13} />
                 <span className="max-w-[180px] truncate">{email}</span>
@@ -128,6 +125,13 @@ export function SiteNav() {
                 }`}
               >
                 <div className="px-3 py-2 text-[11px] text-gray-400 truncate border-b border-white/10 mb-1">{email}</div>
+                <Link
+                  to="/history"
+                  onClick={() => setAccountOpen(false)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg hover:bg-white/10 transition-colors"
+                >
+                  <Clock size={13} /> {t({ zh: "历史记录", en: "History" })}
+                </Link>
                 <button
                   onClick={() => { logout(); setAccountOpen(false); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg hover:bg-white/10 transition-colors"
@@ -137,10 +141,7 @@ export function SiteNav() {
               </div>
             </div>
           ) : (
-            <Link
-              to="/login"
-              className={`hidden sm:flex ${pillCls}`}
-            >
+            <Link to="/login" className={`hidden sm:flex ${pillCls}`}>
               <User size={13} />
               {loginLabel}
             </Link>
@@ -154,44 +155,33 @@ export function SiteNav() {
             <X size={18} className={`absolute transition-all duration-500 ${open ? "opacity-100" : "-rotate-180 opacity-0"}`} />
           </button>
         </div>
-
       </nav>
 
+      {/* 移动端菜单 */}
       <div
         className={`md:hidden absolute top-[72px] left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-lg border-t border-b border-gray-800 shadow-2xl transition-all duration-500 ${
           open ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0 pointer-events-none"
         }`}
       >
         <div className="flex flex-col p-4 gap-1">
-          <Link
-            to="/"
-            onClick={() => setOpen(false)}
-            className="py-3 px-3 rounded-lg hover:bg-gray-800/50 transition-all"
-          >
+          <Link to="/" onClick={() => setOpen(false)} className="py-3 px-3 rounded-lg hover:bg-gray-800/50 transition-all">
             {homeLabel}
           </Link>
-          {searchOptions.map((opt) => (
+          {searchOptions.map(opt => (
             <Link
               key={opt.to}
               to={opt.to}
               onClick={() => setOpen(false)}
-              className="py-3 px-3 rounded-lg hover:bg-gray-800/50 transition-all"
+              className="py-3 px-3 rounded-lg hover:bg-gray-800/50 transition-all flex items-center gap-2"
             >
+              {opt.icon && <opt.icon size={15} className="text-gray-400" />}
               {opt.label}
             </Link>
           ))}
-          <Link
-            to="/more"
-            onClick={() => setOpen(false)}
-            className="py-3 px-3 rounded-lg hover:bg-gray-800/50 transition-all"
-          >
+          <Link to="/more" onClick={() => setOpen(false)} className="py-3 px-3 rounded-lg hover:bg-gray-800/50 transition-all">
             {moreLabel}
           </Link>
-          <Link
-            to="/more"
-            onClick={() => setOpen(false)}
-            className="py-3 px-3 rounded-lg hover:bg-gray-800/50 flex items-center gap-2"
-          >
+          <Link to="/more" onClick={() => setOpen(false)} className="py-3 px-3 rounded-lg hover:bg-gray-800/50 flex items-center gap-2">
             <HelpCircle size={16} /> {helpLabel}
           </Link>
           {email ? (
