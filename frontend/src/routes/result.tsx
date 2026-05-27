@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { z } from "zod";
 import { CheckCircle2, AlertTriangle, HelpCircle, Copy, RotateCcw } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
@@ -9,6 +9,8 @@ import { useT } from "@/lib/i18n";
 const searchSchema = z.object({
   title: z.string().default(""),
   status: z.enum(["success", "fake", "unknown"]).default("unknown"),
+  matchedTitle: z.string().default(""),
+  similarity: z.string().default(""),
 });
 
 export const Route = createFileRoute("/result")({
@@ -28,14 +30,19 @@ function fmt(d: Date) {
 }
 
 function ResultPage() {
-  const { title, status } = Route.useSearch();
+  const { title, status, matchedTitle, similarity } = Route.useSearch();
   const navigate = useNavigate();
   const t = useT();
   const [time] = useState(() => fmt(new Date()));
   const [copied, setCopied] = useState(false);
   const retryRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => { retryRef.current?.focus(); }, []);
+  const simNum = similarity ? parseInt(similarity, 10) : null;
+  const simColor =
+    simNum === null ? "text-gray-400"
+    : simNum >= 80 ? "text-emerald-300"
+    : simNum >= 50 ? "text-amber-300"
+    : "text-rose-300";
 
   const META = {
     success: {
@@ -43,21 +50,21 @@ function ResultPage() {
       color: "text-emerald-300",
       chip: t({ zh: "已通过", en: "Verified" }),
       headline: t({ zh: "找到了。这篇论文真实存在。", en: "Found. This paper is real." }),
-      desc: t({ zh: "在学术数据库中检索到了可信记录。", en: "We found a trustworthy record across academic databases." }),
+      desc: t({ zh: "在 DBLP 学术数据库中检索到了可信记录。", en: "A trustworthy record was found in the DBLP academic database." }),
     },
     fake: {
       icon: AlertTriangle,
       color: "text-rose-300",
       chip: t({ zh: "疑似虚假", en: "Likely fake" }),
       headline: t({ zh: "未找到来源。这条引用可能不存在。", en: "No source found. This citation may not exist." }),
-      desc: t({ zh: "在主流学术数据库中未检索到有效记录。", en: "No valid record was found across leading academic databases." }),
+      desc: t({ zh: "在 DBLP 学术数据库中未检索到有效记录。", en: "No valid record was found in the DBLP academic database." }),
     },
     unknown: {
       icon: HelpCircle,
       color: "text-amber-300",
       chip: t({ zh: "无法判断", en: "Inconclusive" }),
-      headline: t({ zh: "暂时无法判断。请稍后再试。", en: "Couldn't decide yet. Try again in a moment." }),
-      desc: t({ zh: "数据来源覆盖度或置信度不足。", en: "Coverage or confidence wasn't enough this time." }),
+      headline: t({ zh: "找到近似记录，但相似度偏低，建议人工核查。", en: "A similar record was found, but similarity is low. Manual verification recommended." }),
+      desc: t({ zh: "DBLP 中存在相近标题，但无法确认是同一篇文献。", en: "A similar title exists in DBLP, but it may not be the same paper." }),
     },
   } as const;
 
@@ -66,7 +73,9 @@ function ResultPage() {
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(`【${meta.chip}】${title}\n${t({ zh: "时间", en: "Time" })}: ${time}`);
+      await navigator.clipboard.writeText(
+        `【${meta.chip}】${title}\n${t({ zh: "时间", en: "Time" })}: ${time}`
+      );
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {}
@@ -89,20 +98,36 @@ function ResultPage() {
             </h1>
             <p className="text-sm text-gray-400 mb-8">{meta.desc}</p>
 
-            <div className="liquid-glass rounded-2xl p-5 mb-5">
+            {/* 查询标题 */}
+            <div className="liquid-glass rounded-2xl p-5 mb-3">
               <div className="text-xs text-gray-400 mb-2">{t({ zh: "你输入的标题", en: "Your input" })}</div>
-              <div className="text-base sm:text-lg break-words whitespace-pre-wrap">{title || t({ zh: "（空）", en: "(empty)" })}</div>
+              <div className="text-base sm:text-lg break-words">{title || t({ zh: "（空）", en: "(empty)" })}</div>
             </div>
 
+            {/* DBLP 匹配结果 */}
+            {matchedTitle && (
+              <div className="liquid-glass rounded-2xl p-5 mb-5">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs text-gray-400">{t({ zh: "DBLP 匹配标题", en: "DBLP matched title" })}</div>
+                  {simNum !== null && (
+                    <span className={`text-sm font-medium tabular-nums ${simColor}`}>
+                      {t({ zh: "相似度", en: "Similarity" })} {simNum}%
+                    </span>
+                  )}
+                </div>
+                <div className="text-sm break-words">{matchedTitle}</div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-              <InfoTile label={t({ zh: "检测时间", en: "Time" })} value={time} />
-              <InfoTile
-                label={t({ zh: "数据来源", en: "Sources" })}
-                value={t({
-                  zh: "核心学术数据库、期刊索引、开放获取库",
-                  en: "Core academic databases, journal indexes, open-access archives",
-                })}
-              />
+              <div className="liquid-glass rounded-2xl p-4">
+                <div className="text-xs text-gray-400 mb-1.5">{t({ zh: "检测时间", en: "Time" })}</div>
+                <div className="text-sm">{time}</div>
+              </div>
+              <div className="liquid-glass rounded-2xl p-4">
+                <div className="text-xs text-gray-400 mb-1.5">{t({ zh: "数据来源", en: "Source" })}</div>
+                <div className="text-sm">DBLP</div>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -123,15 +148,6 @@ function ResultPage() {
           </div>
         </div>
       </main>
-    </div>
-  );
-}
-
-function InfoTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="liquid-glass rounded-2xl p-4">
-      <div className="text-xs text-gray-400 mb-1.5">{label}</div>
-      <div className="text-sm break-words">{value}</div>
     </div>
   );
 }

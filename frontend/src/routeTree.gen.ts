@@ -14,6 +14,7 @@ import { Route as ResultRouteImport } from './routes/result'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as MoreRouteImport } from './routes/more'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as HistoryRouteImport } from './routes/history'
 import { Route as EnglishLiteratureRouteImport } from './routes/english-literature'
 import { Route as DetectRouteImport } from './routes/detect'
 import { Route as ChineseLiteratureRouteImport } from './routes/chinese-literature'
@@ -46,6 +47,11 @@ const MoreRoute = MoreRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EnglishLiteratureRoute = EnglishLiteratureRouteImport.update({
@@ -95,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/chinese-literature': typeof ChineseLiteratureRoute
   '/detect': typeof DetectRoute
   '/english-literature': typeof EnglishLiteratureRoute
+  '/history': typeof HistoryRoute
   '/login': typeof LoginRoute
   '/more': typeof MoreRoute
   '/register': typeof RegisterRoute
@@ -110,6 +117,7 @@ export interface FileRoutesByTo {
   '/chinese-literature': typeof ChineseLiteratureRoute
   '/detect': typeof DetectRoute
   '/english-literature': typeof EnglishLiteratureRoute
+  '/history': typeof HistoryRoute
   '/login': typeof LoginRoute
   '/more': typeof MoreRoute
   '/register': typeof RegisterRoute
@@ -126,6 +134,7 @@ export interface FileRoutesById {
   '/chinese-literature': typeof ChineseLiteratureRoute
   '/detect': typeof DetectRoute
   '/english-literature': typeof EnglishLiteratureRoute
+  '/history': typeof HistoryRoute
   '/login': typeof LoginRoute
   '/more': typeof MoreRoute
   '/register': typeof RegisterRoute
@@ -143,6 +152,7 @@ export interface FileRouteTypes {
     | '/chinese-literature'
     | '/detect'
     | '/english-literature'
+    | '/history'
     | '/login'
     | '/more'
     | '/register'
@@ -158,6 +168,7 @@ export interface FileRouteTypes {
     | '/chinese-literature'
     | '/detect'
     | '/english-literature'
+    | '/history'
     | '/login'
     | '/more'
     | '/register'
@@ -173,6 +184,7 @@ export interface FileRouteTypes {
     | '/chinese-literature'
     | '/detect'
     | '/english-literature'
+    | '/history'
     | '/login'
     | '/more'
     | '/register'
@@ -189,6 +201,7 @@ export interface RootRouteChildren {
   ChineseLiteratureRoute: typeof ChineseLiteratureRoute
   DetectRoute: typeof DetectRoute
   EnglishLiteratureRoute: typeof EnglishLiteratureRoute
+  HistoryRoute: typeof HistoryRoute
   LoginRoute: typeof LoginRoute
   MoreRoute: typeof MoreRoute
   RegisterRoute: typeof RegisterRoute
@@ -234,6 +247,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/english-literature': {
@@ -301,6 +321,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChineseLiteratureRoute: ChineseLiteratureRoute,
   DetectRoute: DetectRoute,
   EnglishLiteratureRoute: EnglishLiteratureRoute,
+  HistoryRoute: HistoryRoute,
   LoginRoute: LoginRoute,
   MoreRoute: MoreRoute,
   RegisterRoute: RegisterRoute,
