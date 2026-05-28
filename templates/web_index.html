@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="/static/web_styles.css" />
     <link rel="stylesheet" href="/static/material_theme.css" />
     <style>
-      /* 进度条样式 */
       #progress-container {
         display: none;
         margin-top: 12px;
@@ -48,12 +47,13 @@
         background: #d32f2f;
       }
       @keyframes pulse {
-        0%   { opacity: 1; }
-        50%  { opacity: 0.5; }
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
         100% { opacity: 1; }
       }
     </style>
   </head>
+
   <body>
     <header class="top-titlebar">
       <div class="brand-block">
@@ -97,55 +97,6 @@
             <input id="max-candidates" type="number" min="1" value="100000" />
           </label>
         </section>
-
-        <section class="sidebar-section">
-          <h3 data-i18n="footer_title">Project Information</h3>
-          <div class="meta-grid">
-            <div class="meta-row">
-              <span data-i18n="footer_owner_label">Developer & Maintainer</span>
-              <strong data-i18n="footer_owner_value">Nankai University AOSP Laboratory</strong>
-            </div>
-            <div class="meta-row">
-              <span data-i18n="footer_members_label">Members</span>
-              <strong data-i18n="footer_members_value">Xiang Li, Zuyao Xu, Yuqi Qiu, Fubin Wu, Fasheng Miao, Lu Sun</strong>
-            </div>
-            <div class="meta-row">
-              <span data-i18n="footer_version_label">Version</span>
-              <strong>v{{ app_version }}</strong>
-            </div>
-            <div class="meta-row">
-              <span data-i18n="footer_features_label">Current Features</span>
-              <strong data-i18n="footer_features_value">Single-title lookup, batch verification, CSV export, and runtime telemetry.</strong>
-            </div>
-            <div class="meta-row">
-              <span data-i18n="footer_license_label">License</span>
-              <strong>MIT</strong>
-            </div>
-            <div class="meta-row">
-              <span data-i18n="footer_visits_label">Visits</span>
-              <strong>{{ visit_count }}</strong>
-            </div>
-            <div class="meta-row">
-              <span data-i18n="footer_copyright_label">Copyright</span>
-              <strong data-i18n="footer_copyright_value">&copy; 2026 AOSP Lab of Nankai University. All Rights Reserved.</strong>
-            </div>
-          </div>
-        </section>
-
-        <section class="sidebar-section">
-          <div class="lab-promo">
-            <div class="lab-promo-info">
-              <h3 data-i18n="lab_name">AOSP Laboratory, Nankai University</h3>
-              <p class="lab-slogan" data-i18n="lab_slogan">All-in-One Security and Privacy Lab</p>
-              <p data-i18n="lab_description">The lab focuses on diversified security and privacy research, spanning network security, Web security, LLM security, and emerging security risks. It is dedicated to enhancing overall security in scenarios where network technologies converge with large models, and continuously supports the security community through original research contributions.</p>
-              <p data-i18n-html="lab_advisor_intro">Advisor: <a href="https://lixiang521.com/" target="_blank" rel="noopener">Xiang Li</a>.</p>
-            </div>
-            <div class="lab-promo-qrcode">
-              <img src="/static/aosp-qrcode.jpg" alt="AOSP Lab QR Code" />
-              <span data-i18n="lab_qrcode_caption">Follow AOSP Lab</span>
-            </div>
-          </div>
-        </section>
       </aside>
 
       <main class="content">
@@ -176,6 +127,7 @@
 
         <section class="card">
           <h2 data-i18n="batch_title">Batch Search</h2>
+
           <form id="batch-form" class="search-form">
             <label class="field">
               <span data-i18n="batch_input_label">Titles (one per line)</span>
@@ -186,14 +138,17 @@
                 placeholder="Attention Is All You Need&#10;BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
               ></textarea>
             </label>
+
             <label class="field">
               <span data-i18n="batch_file_label">Upload TXT/CSV (first column used)</span>
               <input id="batch-file" type="file" accept=".txt,.csv,text/plain,text/csv" />
             </label>
+
             <label class="field">
               <span data-i18n="batch_pdf_label">Or Upload PDF (extract references and search)</span>
               <input id="batch-pdf-file" type="file" accept=".pdf,application/pdf" />
             </label>
+
             <div class="btn-row">
               <button type="submit" id="batch-run-btn" data-i18n="batch_run_button">Run Batch</button>
               <button type="button" id="batch-download-btn" class="btn-secondary" disabled data-i18n="batch_download_button">
@@ -202,7 +157,6 @@
             </div>
           </form>
 
-          <!-- 进度条区域 -->
           <div id="progress-container">
             <p id="progress-label">Preparing...</p>
             <div id="progress-bar-wrap">
@@ -212,6 +166,7 @@
 
           <p id="batch-msg" class="msg"></p>
           <div id="batch-summary" class="result-box empty" data-i18n="batch_no_result">No batch result yet.</div>
+
           <div class="table-wrap">
             <table id="batch-table">
               <thead>
@@ -238,8 +193,8 @@
     </div>
 
     <script src="/static/web_app.js"></script>
+
     <script>
-      // 进度条轮询逻辑
       let _progressTimer = null;
 
       function startProgressPolling() {
@@ -270,7 +225,7 @@
               label.textContent = 'Step 1/2 — Parsing PDF references with LLM...';
             } else if (status === 'searching') {
               const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
-              bar.style.width = (30 + pct * 0.7) + '%';
+              bar.style.width = 30 + pct * 0.7 + '%';
               label.textContent = `Step 2/2 — Searching DBLP: ${processed} / ${total}  (found ${found})`;
             } else if (status === 'done') {
               bar.style.width = '100%';
@@ -281,9 +236,7 @@
               label.textContent = `Error: ${stage}`;
               stopProgressPolling();
             }
-          } catch (e) {
-            // 网络错误时静默忽略
-          }
+          } catch (e) {}
         }, 1000);
       }
 
@@ -294,13 +247,72 @@
         }
       }
 
-      // 在 Run Batch 按钮点击时启动进度条
+      function renderPdfBatchResult(data) {
+        const tbody = document.getElementById('batch-tbody');
+        const summary = document.getElementById('batch-summary');
+        const msg = document.getElementById('batch-msg');
+        const downloadBtn = document.getElementById('batch-download-btn');
+
+        tbody.innerHTML = '';
+
+        const results = data.results || data.items || data.data || [];
+
+        if (!results.length) {
+          summary.className = 'result-box empty';
+          summary.textContent = 'PDF parsed, but no references were found.';
+          msg.textContent = '';
+          return;
+        }
+
+        results.forEach((item, index) => {
+          const tr = document.createElement('tr');
+
+          tr.innerHTML = `
+            <td>${index + 1}</td>
+            <td>${item.query_title || item.query || item.title || ''}</td>
+            <td>${item.status || item.match_status || ''}</td>
+            <td>${item.matched_title || item.matched || ''}</td>
+            <td>${item.similarity ?? ''}</td>
+            <td>${item.year || ''}</td>
+            <td>${item.venue || ''}</td>
+          `;
+
+          tbody.appendChild(tr);
+        });
+
+        summary.className = 'result-box';
+        summary.textContent = `PDF batch finished. ${results.length} references processed.`;
+        msg.textContent = 'PDF imported successfully.';
+
+        if (data.csv_url || data.download_url) {
+          downloadBtn.disabled = false;
+          downloadBtn.onclick = () => {
+            window.location.href = data.csv_url || data.download_url;
+          };
+        }
+      }
+
       document.addEventListener('DOMContentLoaded', () => {
         const batchForm = document.getElementById('batch-form');
+        const pdfInput = document.getElementById('batch-pdf-file');
+        const msg = document.getElementById('batch-msg');
+
+        if (pdfInput) {
+          pdfInput.addEventListener('change', () => {
+            if (pdfInput.files && pdfInput.files.length > 0) {
+              msg.textContent = `PDF selected: ${pdfInput.files[0].name}`;
+            }
+          });
+        }
+
         if (batchForm) {
           batchForm.addEventListener('submit', () => {
-            stopProgressPolling();
-            startProgressPolling();
+            if (pdfInput && pdfInput.files && pdfInput.files.length > 0) {
+              stopProgressPolling();
+              startProgressPolling();
+            } else {
+              stopProgressPolling();
+            }
           });
         }
       });

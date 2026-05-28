@@ -6,7 +6,6 @@ import asyncio
 from weakref import ref
 import aiohttp
 
-from openai import OpenAI
 from parser.format.utils import clean_text, extract_id
 from parser.utils.pdf_reader import pdf_to_text
 
@@ -15,7 +14,7 @@ MAX_RETRY_TIMES = 3
 # LLM API key should be set via environment variable
 # export DASHSCOPE_API_KEY='your_api_key_here'
 if 'DASHSCOPE_API_KEY' not in os.environ:
-    os.environ['DASHSCOPE_API_KEY'] = 'sk-06533d0f0b184a53b5d436f2d7c2e37e'
+    os.environ['DASHSCOPE_API_KEY'] = 'sk-c585aa2f7f8142ec948ac60de1b21e83'
 
 def llm_parse(text: str) -> List[Dict]:
     """
@@ -122,7 +121,7 @@ async def llm_str2ref(raw_str: str, semaphore: asyncio.Semaphore) -> Dict:
     }
     payload = {
         #"model": "qwen-flash",
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",
         "messages": [
             {"role": "system", "content": "You are a helpful assistant that extracts references from academic papers."},
             {"role": "user", "content": prompt}

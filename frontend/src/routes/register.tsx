@@ -4,6 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
+import { apiClient } from "@/lib/api-client";
 
 export const Route = createFileRoute("/register")({
   component: RegisterPage,
@@ -23,50 +24,40 @@ function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
+  const [apiErr, setApiErr] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const usernameOk = /^[A-Za-z0-9_]{3,20}$/.test(username);
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  const passwordOk = password.length >= 8 && /[A-Za-z]/.test(password) && /\d/.test(password);
+  const passwordOk = password.length >= 6;
   const confirmOk = confirm.length > 0 && confirm === password;
   const valid = usernameOk && emailOk && passwordOk && confirmOk;
 
   const errs = {
     username: username && !usernameOk ? t({ zh: "3–20 位字母、数字或下划线。", en: "3–20 letters, numbers or underscores." }) : "",
     email: email && !emailOk ? t({ zh: "邮箱格式不正确。", en: "Email format isn't valid." }) : "",
-    password: password && !passwordOk ? t({ zh: "至少 8 位，含字母与数字。", en: "At least 8 characters, with letters and numbers." }) : "",
+    password: password && !passwordOk ? t({ zh: "至少 6 位。", en: "At least 6 characters." }) : "",
     confirm: confirm && !confirmOk ? t({ zh: "两次密码不一致。", en: "Passwords don't match." }) : "",
   };
 
- // const submit = (e: React.FormEvent) => {
-    //e.preventDefault();
-    //if (!valid) return;
-    //navigate({ to: "/login" });
- // };
-
-const [err, setErr] = useState("");
-
-const submit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!valid) return;
-  setErr("");
-
-  try {
-    const res = await fetch("/api/user/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, email, password }),
-    });
-    const data = await res.json();
-
-    if (data.success) {
-      navigate({ to: "/login" });
-    } else {
-      setErr(data.message);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid || loading) return;
+    setApiErr("");
+    setLoading(true);
+    try {
+      const data = await apiClient.register({ username, password, email });
+      if (data.success) {
+        navigate({ to: "/login" });
+      } else {
+        setApiErr(data.message || t({ zh: "注册失败，请稍后再试。", en: "Registration failed. Please try again." }));
+      }
+    } catch (e) {
+      setApiErr(e instanceof Error ? e.message : t({ zh: "网络错误，请稍后再试。", en: "Network error. Please try again." }));
+    } finally {
+      setLoading(false);
     }
-  } catch {
-    setErr("网络错误，请稍后重试");
-  }
-};
+  };
 
   return (
     <div className="relative min-h-screen w-full bg-black text-white flex flex-col">
@@ -91,11 +82,12 @@ const submit = async (e: React.FormEvent) => {
             <input
               type={show ? "text" : "password"}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={e => setPassword(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 pr-12 text-sm outline-none focus:border-white/30 transition-colors"
-              placeholder={t({ zh: "至少 8 位，含字母与数字", en: "At least 8 characters, with letters and numbers" })}
+              placeholder={t({ zh: "至少 6 位", en: "At least 6 characters" })}
             />
-            <button type="button" onClick={() => setShow(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+            <button type="button" onClick={() => setShow(s => !s)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
               {show ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
@@ -103,19 +95,21 @@ const submit = async (e: React.FormEvent) => {
           <div className="mb-4" />
 
           <Field label={t({ zh: "确认密码", en: "Confirm password" })} value={confirm} onChange={setConfirm}
-                 placeholder={t({ zh: "再次输入密码", en: "Enter password again" })} error={errs.confirm} type={show ? "text" : "password"} />
+                 placeholder={t({ zh: "再次输入密码", en: "Enter password again" })} error={errs.confirm}
+                 type={show ? "text" : "password"} />
 
-          {err && <p className="text-sm text-red-400 mb-3">{err}</p>}
-          <button
-            type="submit"
-            disabled={!valid}
-            className="w-full mt-4 bg-white text-black rounded-xl font-medium py-3 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {t({ zh: "注册", en: "Create" })}
+          {apiErr && <p className="text-sm text-red-400 mb-3">{apiErr}</p>}
+
+          <button type="submit" disabled={!valid || loading}
+            className="w-full mt-4 bg-white text-black rounded-xl font-medium py-3 hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            {loading ? t({ zh: "注册中…", en: "Creating…" }) : t({ zh: "注册", en: "Create" })}
           </button>
 
           <div className="text-center mt-6 text-sm text-gray-400">
-            {t({ zh: "已有账号？", en: "Already have one?" })} <Link to="/login" className="text-white hover:underline">{t({ zh: "立即登录", en: "Sign in" })}</Link>
+            {t({ zh: "已有账号？", en: "Already have one?" })}{" "}
+            <Link to="/login" className="text-white hover:underline">
+              {t({ zh: "立即登录", en: "Sign in" })}
+            </Link>
           </div>
         </form>
       </main>
@@ -132,7 +126,7 @@ function Field({ label, value, onChange, placeholder, error, type = "text" }: {
       <input
         type={type}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-white/30 transition-colors"
       />

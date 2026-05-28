@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   Search, Sparkles, Database, Languages, Zap,
-  Layers, Globe, Brain,
+  Layers, Globe, Brain, ShieldCheck, FileSearch, BookOpen,
 } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
@@ -132,15 +132,17 @@ function Index() {
 
       {/* Hero */}
       <section className="relative z-10 px-4 sm:px-6 md:px-12 pt-8 md:pt-20 pb-24 md:pb-32">
-        <div className="max-w-4xl">
-          <span
-            className="animate-blur-fade-up inline-flex items-center gap-2 liquid-glass rounded-full px-4 py-1.5 text-xs sm:text-sm mb-6"
-            style={{ animationDelay: "200ms" }}
+        <div className="max-w-4xl mx-auto text-center flex flex-col items-center">
+          <div
+            className="animate-blur-fade-up liquid-glass rounded-full px-5 py-2 mb-8 flex items-center gap-2 text-sm"
+            style={{ animationDelay: "150ms" }}
           >
-            <Sparkles size={14} /> {t({ zh: "GhostCite · 文献真实性检测", en: "GhostCite · Citation verifier" })}
-          </span>
+            <Sparkles size={14} />
+            <span>{t({ zh: "GhostCite · 文献真实性检测", en: "GhostCite · Citation verification" })}</span>
+          </div>
+
           <h1
-            className="animate-blur-fade-up text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-normal mb-5"
+            className="animate-blur-fade-up text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-normal mb-6 leading-tight"
             style={{ animationDelay: "300ms", letterSpacing: "-0.04em" }}
           >
             {t({
@@ -148,13 +150,14 @@ function Index() {
               en: <>Every citation,<br />beyond doubt.</>,
             })}
           </h1>
+
           <p
-            className="animate-blur-fade-up text-base sm:text-lg text-gray-300 mb-8 max-w-2xl"
+            className="animate-blur-fade-up text-base md:text-lg text-gray-300 mb-10 max-w-2xl"
             style={{ animationDelay: "400ms" }}
           >
             {t({
               zh: "输入一个标题。秒级判定真伪。远离虚假引用，远离 AI 幻觉。",
-              en: "Type a title. Know in seconds. No fake references. No AI hallucinations.",
+              en: "Enter a title. Verify in seconds. Free from fake citations and AI hallucinations.",
             })}
           </p>
 
@@ -181,6 +184,26 @@ function Index() {
             </button>
           </div>
           {error && <p className="animate-blur-fade-up mt-3 text-sm text-red-400">{error}</p>}
+
+          {/* Trust badges module */}
+          <div
+            className="animate-blur-fade-up mt-12 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-3xl"
+            style={{ animationDelay: "650ms" }}
+          >
+            {[
+              { icon: ShieldCheck, title: t({ zh: "权威数据库", en: "Authoritative DBs" }), desc: t({ zh: "多源比对，精准定位。", en: "Multi-source cross-check." }) },
+              { icon: FileSearch, title: t({ zh: "秒级核验", en: "Seconds to verify" }), desc: t({ zh: "平均三秒给出答案。", en: "Answers in about 3s." }) },
+              { icon: BookOpen, title: t({ zh: "中英文双语", en: "Bilingual" }), desc: t({ zh: "覆盖中英文文献。", en: "Chinese & English." }) },
+            ].map((m) => (
+              <div key={m.title as string} className="liquid-glass rounded-2xl p-4 flex items-start gap-3 text-left">
+                <m.icon size={20} className="shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium">{m.title}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{m.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

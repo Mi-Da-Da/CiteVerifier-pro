@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
+import multiprocessing as mp
 import os
 import sqlite3
 import threading
@@ -11,7 +14,7 @@ from typing import Any
 
 from user_database import init_user_db, register_user, login_user
 from fastapi import FastAPI, HTTPException, Request, File, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -21,6 +24,8 @@ from parser.llm_parser import llm_parse_pdf
 from dblp_match import (
     _db_has_word_index,
     _sqlite_readonly_fast,
+    _match_worker_init_index,
+    _match_one_title_index,
     load_all_titles_from_db,
     search_dblp_brute_force,
     search_dblp_by_index,
@@ -40,7 +45,7 @@ APP_VERSION = "0.1.0"
 # ── 进度状态 ────────────────────────────────────────────────
 _progress: dict[str, Any] = {
     "status": "idle",   # idle / parsing / searching / done / error
-    "stage": "",        # 当前阶段描述
+    "stage": "",
     "total": 0,
     "processed": 0,
     "found": 0,
@@ -186,6 +191,86 @@ def _single_search_result(db_path: Path, title: str, max_candidates: int) -> dic
         "dblp_title_similarity": match.get("dblp_title_similarity"),
         **meta,
     }
+
+
+def _parallel_batch_search(
+    db_path: Path,
+    titles: list[str],
+    max_candidates: int,
+) -> list[dict[str, Any]]:
+    """
+    批量检索 DBLP，使用 ThreadPoolExecutor 并行搜索。
+    多线程共享进程内存，无需 spawn，Windows 下安全可用。
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    conn = sqlite3.connect(str(db_path))
+    use_index = _db_has_word_index(conn)
+    conn.close()
+
+    results: list[dict[str, Any] | None] = [None] * len(titles)
+    found_count = 0
+    processed_count = 0
+    lock = threading.Lock()
+
+    def search_one(idx: int, title: str) -> tuple[int, dict[str, Any]]:
+        if use_index:
+            try:
+                c = sqlite3.connect(str(db_path))
+                _sqlite_readonly_fast(c)
+                match = search_dblp_by_index(c, title, max_candidates=max_candidates)
+                c.close()
+            except Exception:
+                match = None
+        else:
+            cache_key = str(db_path)
+            with _brute_cache_lock:
+                all_titles_data = _brute_cache.get(cache_key)
+                if all_titles_data is None:
+                    all_titles_data = load_all_titles_from_db(db_path, quiet=True)
+                    _brute_cache[cache_key] = all_titles_data
+            match = search_dblp_brute_force(all_titles_data, title)
+
+        if not match:
+            return idx, {"found": False, "query_title": title}
+        pub_id = match.get("dblp_id")
+        meta = _fetch_publication_meta(db_path, pub_id if isinstance(pub_id, int) else None)
+        return idx, {
+            "found": True,
+            "query_title": title,
+            "dblp_id": match.get("dblp_id"),
+            "dblp_title": match.get("dblp_title"),
+            "dblp_title_similarity": match.get("dblp_title_similarity"),
+            **meta,
+        }
+
+    workers = min(8, max(1, len(titles)))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(search_one, i, t): i for i, t in enumerate(titles)}
+        for future in as_completed(futures):
+            idx, result = future.result()
+            results[idx] = result
+            with lock:
+                processed_count += 1
+                if result.get("found"):
+                    found_count += 1
+                _set_progress(processed=processed_count, found=found_count)
+
+    return results  # type: ignore[return-value]
+
+
+def _items_to_csv(items: list[dict[str, Any]]) -> str:
+    """把 batch items 列表转成 CSV 字符串。"""
+    output = io.StringIO()
+    fieldnames = ["index", "query_title", "found", "dblp_title", "dblp_title_similarity", "year", "venue", "pub_type", "duration_ms", "error_message"]
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore", lineterminator="\n")
+    writer.writeheader()
+    for item in items:
+        row = {k: item.get(k, "") for k in fieldnames}
+        if isinstance(row.get("found"), bool):
+            row["found"] = "1" if row["found"] else "0"
+        writer.writerow(row)
+    return output.getvalue()
 
 
 # ── 页面路由 ────────────────────────────────────────────────
@@ -336,17 +421,10 @@ def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
     found_count = 0
     items: list[dict[str, Any]] = []
 
-    for idx, title in enumerate(titles, start=1):
-        item_started_at = time.perf_counter()
-        error_message: str | None = None
-        result: dict[str, Any]
-        try:
-            result = _single_search_result(db_path, title, payload.max_candidates)
-        except Exception as exc:
-            error_message = str(exc)
-            result = {"found": False, "query_title": title}
+    # ── 多进程并行检索 ────────────────────────────────────
+    batch_results = _parallel_batch_search(db_path, titles, payload.max_candidates)
 
-        duration_ms = max(0, int((time.perf_counter() - item_started_at) * 1000))
+    for idx, result in enumerate(batch_results, start=1):
         found = bool(result.get("found"))
         if found:
             found_count += 1
@@ -356,7 +434,7 @@ def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
         runtime_store.record_batch_item(
             run_id,
             item_index=idx,
-            query_title=title,
+            query_title=result.get("query_title", titles[idx - 1]),
             found=found,
             dblp_id=result.get("dblp_id") if isinstance(result.get("dblp_id"), int) else None,
             dblp_title=result.get("dblp_title"),
@@ -364,18 +442,16 @@ def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
             year=result.get("year"),
             venue=result.get("venue"),
             pub_type=result.get("pub_type"),
-            duration_ms=duration_ms,
-            error_message=error_message,
+            duration_ms=0,
+            error_message=None,
         )
 
-        items.append(
-            {
-                "index": idx,
-                **result,
-                "duration_ms": duration_ms,
-                "error_message": error_message,
-            }
-        )
+        items.append({
+            "index": idx,
+            **result,
+            "duration_ms": 0,
+            "error_message": None,
+        })
 
     total_duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
     runtime_store.finish_batch_run(
@@ -407,151 +483,242 @@ def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
 
 
 @app.post("/api/parse/pdf")
-def api_parse_pdf(file: UploadFile = File(...)):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
-
+def api_parse_pdf(files: list[UploadFile] = File(...)):
+    """解析 PDF 提取参考文献（不做 DBLP 检索）。前端发送字段名 files。"""
+    results: list[dict] = []
     temp_dir = Path("temp")
     temp_dir.mkdir(exist_ok=True)
-    temp_path = temp_dir / file.filename
 
-    try:
-        with open(temp_path, "wb") as f:
-            content = file.file.read()
-            f.write(content)
+    for file in files:
+        if not (file.filename or "").lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail=f"Only PDF files are allowed: {file.filename}")
+        temp_path = temp_dir / (file.filename or "upload.pdf")
+        try:
+            with open(temp_path, "wb") as f:
+                f.write(file.file.read())
+            refs = llm_parse_pdf(str(temp_path))
+            results.extend(refs)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
 
-        references = llm_parse_pdf(str(temp_path))
-        titles = [ref.get("title") for ref in references if ref.get("title")]
-        return {"success": True, "references": references, "titles": titles}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
+    titles = [r.get("title") for r in results if r.get("title")]
+    return {"success": True, "references": results, "titles": titles}
 
 
 @app.post("/api/search/pdf/batch")
-def api_search_pdf_batch(file: UploadFile = File(...)):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
-
+def api_search_pdf_batch(files: list[UploadFile] = File(...)):
+    """上传一个或多个 PDF，解析参考文献并批量检索 DBLP。前端发送字段名 files。"""
     temp_dir = Path("temp")
     temp_dir.mkdir(exist_ok=True)
-    temp_path = temp_dir / file.filename
 
-    try:
-        with open(temp_path, "wb") as f:
-            content = file.file.read()
-            f.write(content)
+    all_references: list[dict] = []
 
-        # 阶段1：LLM 解析 PDF
-        _set_progress(status="parsing", stage="Parsing PDF references", total=0, processed=0, found=0)
-        references = llm_parse_pdf(str(temp_path))
-        titles = [ref.get("title") for ref in references if ref.get("title")]
+    # ── 阶段1：逐个 PDF 解析 ──────────────────────────────
+    _set_progress(status="parsing", stage="Parsing PDF references", total=0, processed=0, found=0)
+    for file in files:
+        if not (file.filename or "").lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail=f"Only PDF files are allowed: {file.filename}")
+        temp_path = temp_dir / (file.filename or "upload.pdf")
+        try:
+            with open(temp_path, "wb") as f:
+                f.write(file.file.read())
+            refs = llm_parse_pdf(str(temp_path))
+            for ref in refs:
+                ref["source_file"] = file.filename or ""
+            all_references.extend(refs)
+        except Exception as e:
+            _set_progress(status="error", stage=str(e))
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
 
-        if not titles:
-            _set_progress(status="done", stage="Done", total=0, processed=0, found=0)
-            return {
-                "summary": {
-                    "run_id": None,
-                    "total_input": 0,
-                    "total_processed": 0,
-                    "found_count": 0,
-                    "not_found_count": 0,
-                },
-                "items": [],
-                "references": references,
-            }
+    titles = [ref.get("title") for ref in all_references if ref.get("title")]
+    source_map: dict[str, str] = {
+        ref.get("title", ""): ref.get("source_file", "")
+        for ref in all_references if ref.get("title")
+    }
 
-        db_path = _resolve_db_path()
-        if not db_path.exists():
-            raise HTTPException(status_code=404, detail="DBLP database not found.")
-
-        max_candidates = 100000
-        runtime_store.increment_counter("batch_search_requests")
-        run_id = runtime_store.start_batch_run(
-            total_input=len(titles),
-            max_candidates=max_candidates,
-        )
-
-        # 阶段2：DBLP 批量搜索
-        _set_progress(status="searching", stage="Searching DBLP", total=len(titles), processed=0, found=0)
-
-        started_at = time.perf_counter()
-        found_count = 0
-        items: list[dict[str, Any]] = []
-
-        for idx, title in enumerate(titles, start=1):
-            item_started_at = time.perf_counter()
-            error_message: str | None = None
-            result: dict[str, Any]
-            try:
-                result = _single_search_result(db_path, title, max_candidates)
-            except Exception as exc:
-                error_message = str(exc)
-                result = {"found": False, "query_title": title}
-
-            duration_ms = max(0, int((time.perf_counter() - item_started_at) * 1000))
-            found = bool(result.get("found"))
-            if found:
-                found_count += 1
-
-            _set_progress(processed=idx, found=found_count)
-
-            runtime_store.record_batch_item(
-                run_id,
-                item_index=idx,
-                query_title=title,
-                found=found,
-                dblp_id=result.get("dblp_id") if isinstance(result.get("dblp_id"), int) else None,
-                dblp_title=result.get("dblp_title"),
-                dblp_title_similarity=result.get("dblp_title_similarity"),
-                year=result.get("year"),
-                venue=result.get("venue"),
-                pub_type=result.get("pub_type"),
-                duration_ms=duration_ms,
-                error_message=error_message,
-            )
-
-            items.append({
-                "index": idx,
-                **result,
-                "duration_ms": duration_ms,
-                "error_message": error_message,
-            })
-
-        total_duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
-        runtime_store.finish_batch_run(
-            run_id,
-            total_processed=len(items),
-            found_count=found_count,
-            duration_ms=total_duration_ms,
-            status="completed",
-            error_message=None,
-        )
-        runtime_store.increment_counter("batch_search_items_total", delta=len(items))
-        runtime_store.increment_counter("batch_search_found_total", delta=found_count)
-
-        _set_progress(status="done", stage="Done", processed=len(items), found=found_count)
-
+    if not titles:
+        _set_progress(status="done", stage="Done", total=0, processed=0, found=0)
         return {
             "summary": {
-                "run_id": run_id,
-                "total_input": len(titles),
-                "total_processed": len(items),
-                "found_count": found_count,
-                "not_found_count": len(items) - found_count,
-                "max_candidates": max_candidates,
-                "duration_ms": total_duration_ms,
+                "run_id": None,
+                "file_count": len(files),
+                "total_input": 0,
+                "total_processed": 0,
+                "found_count": 0,
+                "not_found_count": 0,
+                "max_candidates": 0,
+                "duration_ms": 0,
             },
-            "items": items,
-            "references": references,
+            "items": [],
+            "references": all_references,
         }
-    except HTTPException:
-        raise
-    except Exception as e:
-        _set_progress(status="error", stage=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+
+    db_path = _resolve_db_path()
+    if not db_path.exists():
+        raise HTTPException(status_code=404, detail="DBLP database not found.")
+
+    max_candidates = 100000
+    runtime_store.increment_counter("batch_search_requests")
+    run_id = runtime_store.start_batch_run(
+        total_input=len(titles),
+        max_candidates=max_candidates,
+    )
+
+    # ── 阶段2：DBLP 批量搜索（多进程）─────────────────────
+    _set_progress(status="searching", stage="Searching DBLP", total=len(titles), processed=0, found=0)
+
+    started_at = time.perf_counter()
+    found_count = 0
+    items: list[dict[str, Any]] = []
+
+    batch_results = _parallel_batch_search(db_path, titles, max_candidates)
+
+    for idx, result in enumerate(batch_results, start=1):
+        found = bool(result.get("found"))
+        if found:
+            found_count += 1
+
+        _set_progress(processed=idx, found=found_count)
+
+        title_key = result.get("query_title", titles[idx - 1])
+        runtime_store.record_batch_item(
+            run_id,
+            item_index=idx,
+            query_title=title_key,
+            found=found,
+            dblp_id=result.get("dblp_id") if isinstance(result.get("dblp_id"), int) else None,
+            dblp_title=result.get("dblp_title"),
+            dblp_title_similarity=result.get("dblp_title_similarity"),
+            year=result.get("year"),
+            venue=result.get("venue"),
+            pub_type=result.get("pub_type"),
+            duration_ms=0,
+            error_message=None,
+        )
+
+        items.append({
+            "index": idx,
+            **result,
+            "source_file": source_map.get(title_key, ""),
+            "duration_ms": 0,
+            "error_message": None,
+        })
+
+    total_duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
+    runtime_store.finish_batch_run(
+        run_id,
+        total_processed=len(items),
+        found_count=found_count,
+        duration_ms=total_duration_ms,
+        status="completed",
+        error_message=None,
+    )
+    runtime_store.increment_counter("batch_search_items_total", delta=len(items))
+    runtime_store.increment_counter("batch_search_found_total", delta=found_count)
+
+    _set_progress(status="done", stage="Done", processed=len(items), found=found_count)
+
+    return {
+        "summary": {
+            "run_id": run_id,
+            "file_count": len(files),
+            "total_input": len(titles),
+            "total_processed": len(items),
+            "found_count": found_count,
+            "not_found_count": len(items) - found_count,
+            "max_candidates": max_candidates,
+            "duration_ms": total_duration_ms,
+        },
+        "items": items,
+        "references": all_references,
+    }
+
+
+# ── 历史记录 ────────────────────────────────────────────────
+
+@app.get("/api/history/batch")
+def api_history_batch(limit: int = 20, offset: int = 0) -> dict[str, Any]:
+    """返回最近的批量检索历史列表。"""
+    conn = runtime_store._connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, total_input, total_processed, found_count,
+                   max_candidates, duration_ms, status, error_message, created_at
+            FROM batch_runs
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ).fetchall()
+        total_row = conn.execute("SELECT COUNT(1) AS c FROM batch_runs").fetchone()
+        total = int(total_row["c"]) if total_row else 0
+        items = [dict(r) for r in rows]
+        return {"total": total, "offset": offset, "limit": limit, "runs": items}
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        conn.close()
+
+
+@app.get("/api/history/batch/{run_id}/items")
+def api_history_batch_items(run_id: int) -> dict[str, Any]:
+    """返回某次批量检索的所有结果条目。"""
+    conn = runtime_store._connect()
+    try:
+        run_row = conn.execute(
+            "SELECT * FROM batch_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if run_row is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        item_rows = conn.execute(
+            """
+            SELECT item_index, query_title, found, dblp_title,
+                   dblp_title_similarity, year, venue, pub_type,
+                   duration_ms, error_message
+            FROM batch_items WHERE run_id = ? ORDER BY item_index
+            """,
+            (run_id,),
+        ).fetchall()
+        return {
+            "run": dict(run_row),
+            "items": [dict(r) for r in item_rows],
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/history/batch/{run_id}/csv")
+def api_history_batch_csv(run_id: int):
+    """下载某次批量检索结果的 CSV 文件。"""
+    conn = runtime_store._connect()
+    try:
+        run_row = conn.execute(
+            "SELECT id FROM batch_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if run_row is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        item_rows = conn.execute(
+            """
+            SELECT item_index, query_title, found, dblp_title,
+                   dblp_title_similarity, year, venue, pub_type,
+                   duration_ms, error_message
+            FROM batch_items WHERE run_id = ? ORDER BY item_index
+            """,
+            (run_id,),
+        ).fetchall()
+        items = [dict(r) for r in item_rows]
+    finally:
+        conn.close()
+
+    csv_text = _items_to_csv(items)
+    filename = f"citeverifier_run_{run_id}.csv"
+    return StreamingResponse(
+        iter([csv_text]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
