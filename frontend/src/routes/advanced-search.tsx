@@ -142,7 +142,7 @@ function BatchSearchPage() {
       }
       setSummary(data.summary);
       setItems(data.items);
-      setProgress(p => ({ ...p, status: "done" }));
+      setProgress(p => ({ ...p, status: "done", processed: data.summary.total_processed, found: data.summary.found_count }));
     } catch {
       setErrMsg(t({ zh: "网络错误，请稍后重试。", en: "Network error. Please try again." }));
       setProgress(p => ({ ...p, status: "error" }));
@@ -180,7 +180,7 @@ function BatchSearchPage() {
       }
       setSummary(data.summary);
       setItems(data.items);
-      setProgress(p => ({ ...p, status: "done" }));
+      setProgress(p => ({ ...p, status: "done", processed: data.summary.total_processed, found: data.summary.found_count }));
     } catch {
       setErrMsg(t({ zh: "网络错误，请稍后重试。", en: "Network error. Please try again." }));
       setProgress(p => ({ ...p, status: "error" }));
