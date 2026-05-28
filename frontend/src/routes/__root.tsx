@@ -10,6 +10,8 @@ import {
 
 import appCss from "../styles.css?url";
 import { LanguageProvider } from "@/lib/i18n";
+import { AuthProvider } from "@/lib/auth";
+import { AiChat } from "@/components/AiChat";
 
 function NotFoundComponent() {
   return (
@@ -73,19 +75,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "GhostCite — Every citation, beyond doubt." },
+      { name: "description", content: "GhostCite verifies whether a paper truly exists. In seconds." },
+      { name: "author", content: "GhostCite" },
+      { property: "og:title", content: "GhostCite" },
+      { property: "og:description", content: "Every citation, beyond doubt." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
+      { rel: "stylesheet", href: appCss },
       {
-        rel: "stylesheet",
-        href: appCss,
+        rel: "icon",
+        type: "image/svg+xml",
+        href: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMwOTA5MGIiLz4KICA8cGF0aCBkPSJNMTggNDAgQzE4IDI0IDI0LjUgMTMgMzIgMTMgQzM5LjUgMTMgNDYgMjQgNDYgNDAgTDQ2IDQ3IFE0MSA1NiAzNiA0NyBRMzEgNTYgMjYgNDcgUTIxIDU2IDE4IDQ3IFoiIGZpbGw9IndoaXRlIi8+CiAgPGNpcmNsZSBjeD0iMjYiIGN5PSIzMiIgcj0iMy41IiBmaWxsPSIjMDkwOTBiIi8+CiAgPGNpcmNsZSBjeD0iMzgiIGN5PSIzMiIgcj0iMy41IiBmaWxsPSIjMDkwOTBiIi8+Cjwvc3ZnPg==",
       },
     ],
   }),
@@ -115,7 +118,10 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>
-        <Outlet />
+        <AuthProvider>
+          <Outlet />
+          <AiChat />
+        </AuthProvider>
       </LanguageProvider>
     </QueryClientProvider>
   );

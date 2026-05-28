@@ -9,15 +9,26 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SimpleSearchRouteImport } from './routes/simple-search'
 import { Route as ResultRouteImport } from './routes/result'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as MoreRouteImport } from './routes/more'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as HistoryRouteImport } from './routes/history'
 import { Route as EnglishLiteratureRouteImport } from './routes/english-literature'
 import { Route as DetectRouteImport } from './routes/detect'
 import { Route as ChineseLiteratureRouteImport } from './routes/chinese-literature'
+import { Route as AdvancedSearchRouteImport } from './routes/advanced-search'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as ApiParsePdfRouteImport } from './routes/api/parse/pdf'
+import { Route as ApiSearchPdfBatchRouteImport } from './routes/api/search/pdf/batch'
 
+const SimpleSearchRoute = SimpleSearchRouteImport.update({
+  id: '/simple-search',
+  path: '/simple-search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ResultRoute = ResultRouteImport.update({
   id: '/result',
   path: '/result',
@@ -38,6 +49,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EnglishLiteratureRoute = EnglishLiteratureRouteImport.update({
   id: '/english-literature',
   path: '/english-literature',
@@ -53,89 +69,158 @@ const ChineseLiteratureRoute = ChineseLiteratureRouteImport.update({
   path: '/chinese-literature',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdvancedSearchRoute = AdvancedSearchRouteImport.update({
+  id: '/advanced-search',
+  path: '/advanced-search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiChatRoute = ApiChatRouteImport.update({
+  id: '/api/chat',
+  path: '/api/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiParsePdfRoute = ApiParsePdfRouteImport.update({
+  id: '/api/parse/pdf',
+  path: '/api/parse/pdf',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSearchPdfBatchRoute = ApiSearchPdfBatchRouteImport.update({
+  id: '/api/search/pdf/batch',
+  path: '/api/search/pdf/batch',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/advanced-search': typeof AdvancedSearchRoute
   '/chinese-literature': typeof ChineseLiteratureRoute
   '/detect': typeof DetectRoute
   '/english-literature': typeof EnglishLiteratureRoute
+  '/history': typeof HistoryRoute
   '/login': typeof LoginRoute
   '/more': typeof MoreRoute
   '/register': typeof RegisterRoute
   '/result': typeof ResultRoute
+  '/simple-search': typeof SimpleSearchRoute
+  '/api/chat': typeof ApiChatRoute
+  '/api/parse/pdf': typeof ApiParsePdfRoute
+  '/api/search/pdf/batch': typeof ApiSearchPdfBatchRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/advanced-search': typeof AdvancedSearchRoute
   '/chinese-literature': typeof ChineseLiteratureRoute
   '/detect': typeof DetectRoute
   '/english-literature': typeof EnglishLiteratureRoute
+  '/history': typeof HistoryRoute
   '/login': typeof LoginRoute
   '/more': typeof MoreRoute
   '/register': typeof RegisterRoute
   '/result': typeof ResultRoute
+  '/simple-search': typeof SimpleSearchRoute
+  '/api/chat': typeof ApiChatRoute
+  '/api/parse/pdf': typeof ApiParsePdfRoute
+  '/api/search/pdf/batch': typeof ApiSearchPdfBatchRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/advanced-search': typeof AdvancedSearchRoute
   '/chinese-literature': typeof ChineseLiteratureRoute
   '/detect': typeof DetectRoute
   '/english-literature': typeof EnglishLiteratureRoute
+  '/history': typeof HistoryRoute
   '/login': typeof LoginRoute
   '/more': typeof MoreRoute
   '/register': typeof RegisterRoute
   '/result': typeof ResultRoute
+  '/simple-search': typeof SimpleSearchRoute
+  '/api/chat': typeof ApiChatRoute
+  '/api/parse/pdf': typeof ApiParsePdfRoute
+  '/api/search/pdf/batch': typeof ApiSearchPdfBatchRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/advanced-search'
     | '/chinese-literature'
     | '/detect'
     | '/english-literature'
+    | '/history'
     | '/login'
     | '/more'
     | '/register'
     | '/result'
+    | '/simple-search'
+    | '/api/chat'
+    | '/api/parse/pdf'
+    | '/api/search/pdf/batch'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/advanced-search'
     | '/chinese-literature'
     | '/detect'
     | '/english-literature'
+    | '/history'
     | '/login'
     | '/more'
     | '/register'
     | '/result'
+    | '/simple-search'
+    | '/api/chat'
+    | '/api/parse/pdf'
+    | '/api/search/pdf/batch'
   id:
     | '__root__'
     | '/'
+    | '/advanced-search'
     | '/chinese-literature'
     | '/detect'
     | '/english-literature'
+    | '/history'
     | '/login'
     | '/more'
     | '/register'
     | '/result'
+    | '/simple-search'
+    | '/api/chat'
+    | '/api/parse/pdf'
+    | '/api/search/pdf/batch'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdvancedSearchRoute: typeof AdvancedSearchRoute
   ChineseLiteratureRoute: typeof ChineseLiteratureRoute
   DetectRoute: typeof DetectRoute
   EnglishLiteratureRoute: typeof EnglishLiteratureRoute
+  HistoryRoute: typeof HistoryRoute
   LoginRoute: typeof LoginRoute
   MoreRoute: typeof MoreRoute
   RegisterRoute: typeof RegisterRoute
   ResultRoute: typeof ResultRoute
+  SimpleSearchRoute: typeof SimpleSearchRoute
+  ApiChatRoute: typeof ApiChatRoute
+  ApiParsePdfRoute: typeof ApiParsePdfRoute
+  ApiSearchPdfBatchRoute: typeof ApiSearchPdfBatchRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/simple-search': {
+      id: '/simple-search'
+      path: '/simple-search'
+      fullPath: '/simple-search'
+      preLoaderRoute: typeof SimpleSearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/result': {
       id: '/result'
       path: '/result'
@@ -164,6 +249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/english-literature': {
       id: '/english-literature'
       path: '/english-literature'
@@ -185,6 +277,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChineseLiteratureRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/advanced-search': {
+      id: '/advanced-search'
+      path: '/advanced-search'
+      fullPath: '/advanced-search'
+      preLoaderRoute: typeof AdvancedSearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -192,18 +291,45 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/chat': {
+      id: '/api/chat'
+      path: '/api/chat'
+      fullPath: '/api/chat'
+      preLoaderRoute: typeof ApiChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/parse/pdf': {
+      id: '/api/parse/pdf'
+      path: '/api/parse/pdf'
+      fullPath: '/api/parse/pdf'
+      preLoaderRoute: typeof ApiParsePdfRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/search/pdf/batch': {
+      id: '/api/search/pdf/batch'
+      path: '/api/search/pdf/batch'
+      fullPath: '/api/search/pdf/batch'
+      preLoaderRoute: typeof ApiSearchPdfBatchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdvancedSearchRoute: AdvancedSearchRoute,
   ChineseLiteratureRoute: ChineseLiteratureRoute,
   DetectRoute: DetectRoute,
   EnglishLiteratureRoute: EnglishLiteratureRoute,
+  HistoryRoute: HistoryRoute,
   LoginRoute: LoginRoute,
   MoreRoute: MoreRoute,
   RegisterRoute: RegisterRoute,
   ResultRoute: ResultRoute,
+  SimpleSearchRoute: SimpleSearchRoute,
+  ApiChatRoute: ApiChatRoute,
+  ApiParsePdfRoute: ApiParsePdfRoute,
+  ApiSearchPdfBatchRoute: ApiSearchPdfBatchRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
