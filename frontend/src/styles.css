@@ -7,45 +7,92 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/*
+ * Liquid Glass —— 在浅色背景上呈现"毛玻璃 + 高光描边"质感。
+ * 使用 white 半透明 + backdrop-filter blur/saturate，营造苹果风液态玻璃。
+ * 不手写 -webkit-backdrop-filter 以避免 Lightning CSS 在生产构建时
+ * 丢掉标准 backdrop-filter。
+ */
 .liquid-glass {
-  background: rgba(255, 255, 255, 0.01);
-  background-blend-mode: luminosity;
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-  border: none;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  background: transparent;
+  backdrop-filter: none;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: none;
   position: relative;
-  overflow: hidden;
-}
-.liquid-glass::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1.4px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%, rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-          mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-          mask-composite: exclude;
-  pointer-events: none;
 }
 
 @keyframes blurFadeUp {
   from { opacity: 0; filter: blur(20px); transform: translateY(40px); }
   to { opacity: 1; filter: blur(0); transform: translateY(0); }
 }
+
+/* GhostCite 背景光斑漂浮动画 */
+.ghost-blob { position: absolute; border-radius: 9999px; will-change: transform, opacity; }
+
+@keyframes ghostDrift1 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.7; }
+  50%      { transform: translate(60px, 40px) scale(1.1); opacity: 0.9; }
+}
+@keyframes ghostDrift2 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.65; }
+  50%      { transform: translate(-50px, 60px) scale(1.08); opacity: 0.85; }
+}
+@keyframes ghostDrift3 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+  50%      { transform: translate(40px, -50px) scale(1.12); opacity: 0.8; }
+}
+@keyframes ghostDrift4 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.55; }
+  50%      { transform: translate(-30px, -40px) scale(1.15); opacity: 0.75; }
+}
+
 .animate-blur-fade-up {
   opacity: 0;
   animation: blurFadeUp 1s ease-out forwards;
 }
 
 .bottom-blur-overlay {
-  -webkit-backdrop-filter: blur(24px);
   backdrop-filter: blur(24px);
-  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 45%);
-          mask-image: linear-gradient(to top, black 0%, transparent 45%);
+  mask-image: linear-gradient(to top, black 0%, transparent 45%);
 }
+
+/*
+ * Ghost Theme —— 浅色主题桥接层。
+ * 在根容器加 .ghost-theme，将原本为深色主题写的工具类
+ * (bg-black / text-white / text-gray-*) 平滑映射到浅色配色，
+ * 这样不需要逐页改 className 就能切换到浅色液态玻璃风。
+ */
+.ghost-theme.bg-black,
+.ghost-theme .bg-black { background-color: transparent !important; }
+
+.ghost-theme,
+.ghost-theme .text-white { color: #1a1f36 !important; }
+
+.ghost-theme .text-gray-300 { color: #475569 !important; }
+.ghost-theme .text-gray-400 { color: #64748b !important; }
+.ghost-theme .text-gray-500 { color: #94a3b8 !important; }
+.ghost-theme .placeholder\:text-gray-500::placeholder { color: #94a3b8 !important; }
+.ghost-theme .text-white\/90 { color: #1a1f36 !important; }
+
+/* 主按钮：白底黑字 → 深墨底白字，在浅色背景上更突出 */
+.ghost-theme .bg-white { background-color: #1a1f36 !important; color: #ffffff !important; }
+.ghost-theme .bg-white.text-black { color: #ffffff !important; }
+.ghost-theme .hover\:bg-gray-200:hover { background-color: #2d3553 !important; }
+
+/* 细分隔线 & hover：把白色描边换成深色低透明 */
+.ghost-theme .border-white\/10 { border-color: rgba(26, 31, 54, 0.1) !important; }
+.ghost-theme .bg-white\/25 { background-color: rgba(26, 31, 54, 0.2) !important; }
+.ghost-theme .hover\:bg-white\/10:hover { background-color: rgba(26, 31, 54, 0.06) !important; }
+.ghost-theme .hover\:text-white:hover { color: #1a1f36 !important; }
+.ghost-theme .hover\:text-gray-300:hover { color: #475569 !important; }
+
+/* 移动端弹出菜单原本是 bg-gray-900/95 深色，这里也调浅 */
+.ghost-theme .bg-gray-900\/95 {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(18px) saturate(160%);
+}
+.ghost-theme .border-gray-800 { border-color: rgba(26, 31, 54, 0.08) !important; }
+.ghost-theme .hover\:bg-gray-800\/50:hover { background-color: rgba(26, 31, 54, 0.05) !important; }
 
 @custom-variant dark (&:is(.dark *));
 

@@ -209,8 +209,8 @@ function Index() {
 
       {/* Video */}
       <section className="relative z-10 px-4 sm:px-6 md:px-12 pb-24 md:pb-36">
-        <div className="liquid-glass rounded-3xl mx-auto w-full max-w-4xl aspect-[16/9] flex items-center justify-center">
-          <div className="text-gray-400 text-sm">{t({ zh: "演示视频即将上线。", en: "Demo coming soon." })}</div>
+        <div className="rounded-3xl mx-auto w-full max-w-4xl aspect-[16/9] flex items-center justify-center border border-white/15 bg-transparent backdrop-blur-0">
+          <div className="text-gray-400/80 text-sm">{t({ zh: "演示视频即将上线。", en: "Demo coming soon." })}</div>
         </div>
       </section>
 

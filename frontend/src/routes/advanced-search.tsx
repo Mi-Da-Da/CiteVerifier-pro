@@ -15,7 +15,7 @@ export const Route = createFileRoute("/advanced-search")({
   }),
 });
 
-type TabKey = "titles" | "pdf";
+type TabKey = "titles" | "pdf" | "csv";
 
 type BatchResultItem = {
   index: number;
@@ -56,6 +56,10 @@ function BatchSearchPage() {
   // PDF
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
+
+  // CSV
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   // 结果
   const [summary, setSummary] = useState<BatchSummary | null>(null);
@@ -189,6 +193,54 @@ function BatchSearchPage() {
     }
   };
 
+  // ── CSV 批量搜索 ──────────────────────────────────────────────
+  const runCsvBatch = async () => {
+    if (!csvFile) {
+      setErrMsg(t({ zh: "请先选择 CSV 文件。", en: "Please select a CSV file first." }));
+      return;
+    }
+    setErrMsg("");
+    setSummary(null);
+    setItems([]);
+    try {
+      const text = await csvFile.text();
+      const lines = text
+        .split(/\r?\n/)
+        .map(l => {
+          const cell = l.split(",")[0] ?? "";
+          return cell.trim().replace(/^"|"$/g, "").replace(/""/g, '"');
+        })
+        .filter(Boolean);
+      // 跳过表头（若首行包含 title/标题）
+      if (lines.length && /title|标题/i.test(lines[0])) lines.shift();
+      if (lines.length === 0) {
+        setErrMsg(t({ zh: "CSV 中未检测到有效标题。", en: "No valid titles found in CSV." }));
+        return;
+      }
+      setProgress({ status: "searching", stage: "Searching DBLP", total: lines.length, processed: 0, found: 0 });
+      startPolling();
+      const res = await fetch("/api/search/title/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titles: lines }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrMsg(data.detail || t({ zh: "请求失败。", en: "Request failed." }));
+        setProgress(p => ({ ...p, status: "error" }));
+        return;
+      }
+      setSummary(data.summary);
+      setItems(data.items);
+      setProgress(p => ({ ...p, status: "done", processed: data.summary.total_processed, found: data.summary.found_count }));
+    } catch {
+      setErrMsg(t({ zh: "CSV 解析或网络错误。", en: "CSV parse or network error." }));
+      setProgress(p => ({ ...p, status: "error" }));
+    } finally {
+      stopPolling();
+    }
+  };
+
   const isRunning = progress.status === "parsing" || progress.status === "searching";
 
   // ── CSV 导出 ──────────────────────────────────────────────────
@@ -246,6 +298,7 @@ function BatchSearchPage() {
               {([
                 { key: "titles", label: t({ zh: "标题列表", en: "Title List" }) },
                 { key: "pdf", label: t({ zh: "上传 PDF", en: "Upload PDF" }) },
+                { key: "csv", label: t({ zh: "上传 CSV", en: "Upload CSV" }) },
               ] as { key: TabKey; label: string }[]).map(tb => (
                 <button
                   key={tb.key}
@@ -342,6 +395,73 @@ function BatchSearchPage() {
                   <button
                     onClick={runPdfBatch}
                     disabled={isRunning || !pdfFile}
+                    className="bg-white text-black rounded-full px-6 py-2 text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {isRunning ? t({ zh: "处理中…", en: "Processing…" }) : t({ zh: "开始检测", en: "Run" })}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* CSV tab */}
+            {tab === "csv" && (
+              <>
+                <div
+                  onClick={() => !csvFile && csvInputRef.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files[0];
+                    if (f?.name.toLowerCase().endsWith(".csv")) setCsvFile(f);
+                  }}
+                  className={`min-h-[200px] flex flex-col items-center justify-center rounded-2xl border-2 border-dashed transition-colors ${
+                    csvFile ? "border-white/20" : "border-white/10 cursor-pointer hover:border-white/30"
+                  }`}
+                >
+                  <input
+                    ref={csvInputRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f) setCsvFile(f);
+                    }}
+                  />
+                  {csvFile ? (
+                    <div className="flex items-center gap-3 p-4">
+                      <FileText size={24} className="text-gray-300" />
+                      <div>
+                        <div className="text-sm font-medium">{csvFile.name}</div>
+                        <div className="text-xs text-gray-400">{(csvFile.size / 1024).toFixed(0)} KB</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          setCsvFile(null);
+                          setSummary(null);
+                          setItems([]);
+                          setProgress({ status: "idle", stage: "", total: 0, processed: 0, found: 0 });
+                        }}
+                        className="ml-2 text-gray-400 hover:text-white"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-3 text-gray-400">
+                      <Upload size={28} />
+                      <span className="text-sm">{t({ zh: "点击或拖拽上传 CSV 文件", en: "Click or drag to upload a CSV" })}</span>
+                      <span className="text-xs">{t({ zh: "系统将自动导入文献标题并逐条核验", en: "Titles will be imported and verified automatically" })}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 flex justify-end">
+                  <button
+                    onClick={runCsvBatch}
+                    disabled={isRunning || !csvFile}
                     className="bg-white text-black rounded-full px-6 py-2 text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {isRunning ? t({ zh: "处理中…", en: "Processing…" }) : t({ zh: "开始检测", en: "Run" })}
