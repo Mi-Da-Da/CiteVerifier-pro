@@ -202,27 +202,17 @@ function BatchSearchPage() {
     setErrMsg("");
     setSummary(null);
     setItems([]);
+    setProgress({ status: "searching", stage: "Uploading CSV", total: 0, processed: 0, found: 0 });
+    startPolling();
+
+    const formData = new FormData();
+    // 后端接收字段名为 file（单数）
+    formData.append("file", csvFile);
+
     try {
-      const text = await csvFile.text();
-      const lines = text
-        .split(/\r?\n/)
-        .map(l => {
-          const cell = l.split(",")[0] ?? "";
-          return cell.trim().replace(/^"|"$/g, "").replace(/""/g, '"');
-        })
-        .filter(Boolean);
-      // 跳过表头（若首行包含 title/标题）
-      if (lines.length && /title|标题/i.test(lines[0])) lines.shift();
-      if (lines.length === 0) {
-        setErrMsg(t({ zh: "CSV 中未检测到有效标题。", en: "No valid titles found in CSV." }));
-        return;
-      }
-      setProgress({ status: "searching", stage: "Searching DBLP", total: lines.length, processed: 0, found: 0 });
-      startPolling();
-      const res = await fetch("/api/search/title/batch", {
+      const res = await fetch("/api/search/csv/batch", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ titles: lines }),
+        body: formData,
       });
       const data = await res.json();
       if (!res.ok) {
@@ -234,12 +224,13 @@ function BatchSearchPage() {
       setItems(data.items);
       setProgress(p => ({ ...p, status: "done", processed: data.summary.total_processed, found: data.summary.found_count }));
     } catch {
-      setErrMsg(t({ zh: "CSV 解析或网络错误。", en: "CSV parse or network error." }));
+      setErrMsg(t({ zh: "CSV 上传或网络错误。", en: "CSV upload or network error." }));
       setProgress(p => ({ ...p, status: "error" }));
     } finally {
       stopPolling();
     }
   };
+
 
   const isRunning = progress.status === "parsing" || progress.status === "searching";
 

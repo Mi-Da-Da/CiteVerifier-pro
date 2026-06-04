@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from user_database import init_user_db, register_user, login_user
-from fastapi import FastAPI, HTTPException, Request, File, UploadFile
+from fastapi import FastAPI, HTTPException, Request, File, Form, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -121,6 +121,153 @@ def _normalize_title_list(values: list[str]) -> list[str]:
         seen.add(key)
         dedup.append(title)
     return dedup
+
+
+def _titles_from_csv_upload(file: UploadFile) -> list[str]:
+    filename = file.filename or "upload.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail=f"Only CSV files are allowed: {filename}")
+
+    raw = file.file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="CSV file is empty.")
+
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("gb18030", errors="replace")
+
+    sample = text[:4096]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+    except csv.Error:
+        dialect = csv.excel
+
+    try:
+        sniffed_header = csv.Sniffer().has_header(sample)
+    except csv.Error:
+        sniffed_header = False
+
+    rows = list(csv.reader(io.StringIO(text), dialect=dialect))
+    if not rows:
+        raise HTTPException(status_code=400, detail="CSV file is empty.")
+
+    header_candidates = {
+        "title",
+        "query_title",
+        "paper_title",
+        "publication_title",
+        "article_title",
+        "标题",
+        "论文标题",
+        "文献标题",
+    }
+    first_row = [cell.strip() for cell in rows[0]]
+    first_row_keys = [cell.casefold() for cell in first_row]
+    candidate_keys = {c.casefold() for c in header_candidates}
+
+    title_index = 0
+    has_header = sniffed_header or any(key in candidate_keys for key in first_row_keys)
+    if has_header:
+        for idx, key in enumerate(first_row_keys):
+            if key in candidate_keys:
+                title_index = idx
+                break
+        data_rows = rows[1:]
+    else:
+        data_rows = rows
+
+    titles = [row[title_index] for row in data_rows if len(row) > title_index]
+    return _normalize_title_list(titles)
+
+
+def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """统一的批量标题检索逻辑，供纯标题、CSV、PDF 批量接口复用。"""
+    if not titles:
+        raise HTTPException(status_code=400, detail="At least one title is required.")
+    if len(titles) > MAX_BATCH_TITLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch size exceeds limit ({MAX_BATCH_TITLES}).",
+        )
+
+    db_path = _resolve_db_path()
+    if not db_path.exists():
+        raise HTTPException(status_code=404, detail="DBLP database not found.")
+
+    runtime_store.increment_counter("batch_search_requests")
+    run_id = runtime_store.start_batch_run(
+        total_input=len(titles),
+        max_candidates=max_candidates,
+    )
+
+    _set_progress(status="searching", stage="Searching DBLP", total=len(titles), processed=0, found=0)
+
+    started_at = time.perf_counter()
+    found_count = 0
+    items: list[dict[str, Any]] = []
+    extra_item_fields = extra_item_fields or {}
+
+    batch_results = _parallel_batch_search(db_path, titles, max_candidates)
+
+    for idx, result in enumerate(batch_results, start=1):
+        found = bool(result.get("found"))
+        if found:
+            found_count += 1
+
+        _set_progress(processed=idx, found=found_count)
+
+        title_key = result.get("query_title", titles[idx - 1])
+        runtime_store.record_batch_item(
+            run_id,
+            item_index=idx,
+            query_title=title_key,
+            found=found,
+            dblp_id=result.get("dblp_id") if isinstance(result.get("dblp_id"), int) else None,
+            dblp_title=result.get("dblp_title"),
+            dblp_title_similarity=result.get("dblp_title_similarity"),
+            year=result.get("year"),
+            venue=result.get("venue"),
+            pub_type=result.get("pub_type"),
+            duration_ms=0,
+            error_message=None,
+        )
+
+        items.append({
+            "index": idx,
+            **result,
+            **extra_item_fields.get(title_key, {}),
+            "duration_ms": 0,
+            "error_message": None,
+        })
+
+    total_duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
+    runtime_store.finish_batch_run(
+        run_id,
+        total_processed=len(items),
+        found_count=found_count,
+        duration_ms=total_duration_ms,
+        status="completed",
+        error_message=None,
+    )
+    runtime_store.increment_counter("batch_search_items_total", delta=len(items))
+    runtime_store.increment_counter("batch_search_found_total", delta=found_count)
+
+    _set_progress(status="done", stage="Done", processed=len(items), found=found_count)
+
+    return {
+        "summary": {
+            "run_id": run_id,
+            "limit": MAX_BATCH_TITLES,
+            "total_input": len(titles),
+            "total_processed": len(items),
+            "found_count": found_count,
+            "not_found_count": len(items) - found_count,
+            "max_candidates": max_candidates,
+            "duration_ms": total_duration_ms,
+        },
+        "items": items,
+    }
 
 
 def _title_hash(title: str) -> str:
@@ -397,89 +544,17 @@ def api_search_title(payload: TitleSearchRequest) -> dict[str, Any]:
 @app.post("/api/search/title/batch")
 def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
     titles = _normalize_title_list(payload.titles)
-    if not titles:
-        raise HTTPException(status_code=400, detail="At least one title is required.")
-    if len(titles) > MAX_BATCH_TITLES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Batch size exceeds limit ({MAX_BATCH_TITLES}).",
-        )
+    return _run_batch_search(titles, payload.max_candidates)
 
-    db_path = _resolve_db_path()
-    if not db_path.exists():
-        raise HTTPException(status_code=404, detail="DBLP database not found.")
 
-    runtime_store.increment_counter("batch_search_requests")
-    run_id = runtime_store.start_batch_run(
-        total_input=len(titles),
-        max_candidates=payload.max_candidates,
-    )
-
-    _set_progress(status="searching", stage="Searching DBLP", total=len(titles), processed=0, found=0)
-
-    started_at = time.perf_counter()
-    found_count = 0
-    items: list[dict[str, Any]] = []
-
-    # ── 多进程并行检索 ────────────────────────────────────
-    batch_results = _parallel_batch_search(db_path, titles, payload.max_candidates)
-
-    for idx, result in enumerate(batch_results, start=1):
-        found = bool(result.get("found"))
-        if found:
-            found_count += 1
-
-        _set_progress(processed=idx, found=found_count)
-
-        runtime_store.record_batch_item(
-            run_id,
-            item_index=idx,
-            query_title=result.get("query_title", titles[idx - 1]),
-            found=found,
-            dblp_id=result.get("dblp_id") if isinstance(result.get("dblp_id"), int) else None,
-            dblp_title=result.get("dblp_title"),
-            dblp_title_similarity=result.get("dblp_title_similarity"),
-            year=result.get("year"),
-            venue=result.get("venue"),
-            pub_type=result.get("pub_type"),
-            duration_ms=0,
-            error_message=None,
-        )
-
-        items.append({
-            "index": idx,
-            **result,
-            "duration_ms": 0,
-            "error_message": None,
-        })
-
-    total_duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
-    runtime_store.finish_batch_run(
-        run_id,
-        total_processed=len(items),
-        found_count=found_count,
-        duration_ms=total_duration_ms,
-        status="completed",
-        error_message=None,
-    )
-    runtime_store.increment_counter("batch_search_items_total", delta=len(items))
-    runtime_store.increment_counter("batch_search_found_total", delta=found_count)
-
-    _set_progress(status="done", stage="Done", processed=len(items), found=found_count)
-
-    return {
-        "summary": {
-            "run_id": run_id,
-            "limit": MAX_BATCH_TITLES,
-            "total_input": len(titles),
-            "total_processed": len(items),
-            "found_count": found_count,
-            "not_found_count": len(items) - found_count,
-            "max_candidates": payload.max_candidates,
-            "duration_ms": total_duration_ms,
-        },
-        "items": items,
-    }
+@app.post("/api/search/csv/batch")
+def api_search_csv_batch(
+    file: UploadFile = File(...),
+    max_candidates: int = Form(default=100000, ge=1, le=500000),
+) -> dict[str, Any]:
+    """上传 CSV，读取标题列并批量检索 DBLP。前端发送字段名 file。"""
+    titles = _titles_from_csv_upload(file)
+    return _run_batch_search(titles, max_candidates)
 
 
 @app.post("/api/parse/pdf")
@@ -536,9 +611,9 @@ def api_search_pdf_batch(files: list[UploadFile] = File(...)):
             if temp_path.exists():
                 temp_path.unlink()
 
-    titles = [ref.get("title") for ref in all_references if ref.get("title")]
-    source_map: dict[str, str] = {
-        ref.get("title", ""): ref.get("source_file", "")
+    titles = _normalize_title_list([ref.get("title") for ref in all_references if ref.get("title")])
+    source_map: dict[str, dict[str, Any]] = {
+        _normalize_title(ref.get("title", "")): {"source_file": ref.get("source_file", "")}
         for ref in all_references if ref.get("title")
     }
 
@@ -559,85 +634,10 @@ def api_search_pdf_batch(files: list[UploadFile] = File(...)):
             "references": all_references,
         }
 
-    db_path = _resolve_db_path()
-    if not db_path.exists():
-        raise HTTPException(status_code=404, detail="DBLP database not found.")
-
-    max_candidates = 100000
-    runtime_store.increment_counter("batch_search_requests")
-    run_id = runtime_store.start_batch_run(
-        total_input=len(titles),
-        max_candidates=max_candidates,
-    )
-
-    # ── 阶段2：DBLP 批量搜索（多进程）─────────────────────
-    _set_progress(status="searching", stage="Searching DBLP", total=len(titles), processed=0, found=0)
-
-    started_at = time.perf_counter()
-    found_count = 0
-    items: list[dict[str, Any]] = []
-
-    batch_results = _parallel_batch_search(db_path, titles, max_candidates)
-
-    for idx, result in enumerate(batch_results, start=1):
-        found = bool(result.get("found"))
-        if found:
-            found_count += 1
-
-        _set_progress(processed=idx, found=found_count)
-
-        title_key = result.get("query_title", titles[idx - 1])
-        runtime_store.record_batch_item(
-            run_id,
-            item_index=idx,
-            query_title=title_key,
-            found=found,
-            dblp_id=result.get("dblp_id") if isinstance(result.get("dblp_id"), int) else None,
-            dblp_title=result.get("dblp_title"),
-            dblp_title_similarity=result.get("dblp_title_similarity"),
-            year=result.get("year"),
-            venue=result.get("venue"),
-            pub_type=result.get("pub_type"),
-            duration_ms=0,
-            error_message=None,
-        )
-
-        items.append({
-            "index": idx,
-            **result,
-            "source_file": source_map.get(title_key, ""),
-            "duration_ms": 0,
-            "error_message": None,
-        })
-
-    total_duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
-    runtime_store.finish_batch_run(
-        run_id,
-        total_processed=len(items),
-        found_count=found_count,
-        duration_ms=total_duration_ms,
-        status="completed",
-        error_message=None,
-    )
-    runtime_store.increment_counter("batch_search_items_total", delta=len(items))
-    runtime_store.increment_counter("batch_search_found_total", delta=found_count)
-
-    _set_progress(status="done", stage="Done", processed=len(items), found=found_count)
-
-    return {
-        "summary": {
-            "run_id": run_id,
-            "file_count": len(files),
-            "total_input": len(titles),
-            "total_processed": len(items),
-            "found_count": found_count,
-            "not_found_count": len(items) - found_count,
-            "max_candidates": max_candidates,
-            "duration_ms": total_duration_ms,
-        },
-        "items": items,
-        "references": all_references,
-    }
+    result = _run_batch_search(titles, max_candidates=100000, extra_item_fields=source_map)
+    result["summary"]["file_count"] = len(files)
+    result["references"] = all_references
+    return result
 
 
 # ── 历史记录 ────────────────────────────────────────────────
