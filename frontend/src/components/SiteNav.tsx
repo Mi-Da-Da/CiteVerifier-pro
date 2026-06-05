@@ -48,7 +48,7 @@ export function SiteNav() {
 
   return (
     <>
-      <nav className="relative z-50 h-[72px] md:h-[88px] px-4 sm:px-6 md:px-12">
+      <nav dir="ltr" className="relative z-50 h-[72px] md:h-[88px] px-4 sm:px-6 md:px-12">
         <Link
           to="/"
           className="absolute left-4 sm:left-6 md:left-12 top-1/2 -translate-y-1/2 h-8 md:h-10 flex items-center text-xl md:text-2xl font-semibold tracking-[-0.04em]"
@@ -57,7 +57,7 @@ export function SiteNav() {
         </Link>
 
         {/* 桌面端中间导航 */}
-        <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-8 h-9">
+        <div dir="ltr" className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-8 h-9">
           <Link
             to="/"
             className="text-sm hover:text-gray-300 transition-colors flex items-center h-9 leading-none"
@@ -107,7 +107,7 @@ export function SiteNav() {
         </div>
 
         {/* 桌面端右侧按钮 */}
-        <div className="absolute right-4 sm:right-6 md:right-12 top-1/2 -translate-y-1/2 flex items-center gap-2 h-9">
+        <div dir="ltr" className="absolute right-4 sm:right-6 md:right-12 top-1/2 -translate-y-1/2 flex items-center gap-2 h-9">
           <Link to="/more" className={`hidden sm:flex ${pillCls}`}>
             <HelpCircle size={13} />
             {helpLabel}
@@ -159,6 +159,7 @@ export function SiteNav() {
 
       {/* 移动端菜单 */}
       <div
+        dir="ltr"
         className={`md:hidden absolute top-[72px] left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-lg border-t border-b border-gray-800 shadow-2xl transition-all duration-500 ${
           open ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0 pointer-events-none"
         }`}

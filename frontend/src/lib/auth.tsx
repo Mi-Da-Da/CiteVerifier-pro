@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState, useCallback, ReactNode 
 
 type AuthCtx = {
   email: string | null;
+  ready: boolean;
+  isLoggedIn: boolean;
   login: (email: string) => void;
   logout: () => void;
 };
@@ -11,17 +13,33 @@ const KEY = "ghostcite.auth.email";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     try {
       const v = localStorage.getItem(KEY);
       if (v) setEmail(v);
-    } catch {}
+    } catch {
+      // localStorage may be unavailable during SSR or in strict privacy modes.
+    } finally {
+      setReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === KEY) {
+        setEmail(event.newValue);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const login = useCallback((e: string) => {
-    setEmail(e);
-    try { localStorage.setItem(KEY, e); } catch {}
+    const value = e.trim();
+    setEmail(value);
+    try { localStorage.setItem(KEY, value); } catch {}
   }, []);
 
   const logout = useCallback(() => {
@@ -29,7 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { localStorage.removeItem(KEY); } catch {}
   }, []);
 
-  return <Ctx.Provider value={{ email, login, logout }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ email, ready, isLoggedIn: Boolean(email), login, logout }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export function useAuth() {

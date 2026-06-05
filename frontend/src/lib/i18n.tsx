@@ -161,7 +161,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = lang;
-    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    // Keep the application shell left-to-right. Arabic labels still render correctly,
+    // but menus/buttons will not flip their icon/text order unexpectedly.
+    document.documentElement.dir = "ltr";
   }, [lang]);
 
   const toggle = useCallback(() => setLang(lang === "zh" ? "en" : "zh"), [lang, setLang]);
@@ -224,17 +226,18 @@ export function LanguageToggle({ className = "" }: { className?: string }) {
   ];
 
   return (
-    <div ref={ref} className={`relative ${className}`}>
+    <div ref={ref} dir="ltr" className={`relative ${className}`}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="text-sm hover:text-gray-300 transition-colors flex items-center gap-1 h-9 leading-none"
+        type="button"
+        className="text-sm hover:text-gray-300 transition-colors flex flex-row items-center gap-1 h-9 leading-none"
         aria-label="Language"
       >
-        <span>{label}</span>
+        <span dir="auto">{label}</span>
         <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       <div
-        className={`!absolute left-0 top-full mt-3 w-40 liquid-glass rounded-2xl p-1.5 z-50 transition-all duration-200 ${
+        className={`!absolute left-0 top-full mt-3 w-40 liquid-glass rounded-2xl p-1.5 z-50 text-left transition-all duration-200 ${
           open ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none"
         }`}
       >
@@ -247,9 +250,10 @@ export function LanguageToggle({ className = "" }: { className?: string }) {
                 setLang(opt.code);
                 setOpen(false);
               }}
-              className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg hover:bg-white/10 transition-colors"
+              type="button"
+              className="w-full flex flex-row items-center justify-between px-3 py-2 text-xs rounded-lg hover:bg-white/10 transition-colors"
             >
-              <span>{opt.label}</span>
+              <span dir="auto">{opt.label}</span>
               {active ? <Check size={12} /> : null}
             </button>
           );
