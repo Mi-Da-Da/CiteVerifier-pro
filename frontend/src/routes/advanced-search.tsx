@@ -199,6 +199,7 @@ function BatchSearchPage() {
       setErrMsg(t({ zh: "请先选择 CSV 文件。", en: "Please select a CSV file first." }));
       return;
     }
+
     setErrMsg("");
     setSummary(null);
     setItems([]);
@@ -206,7 +207,6 @@ function BatchSearchPage() {
     startPolling();
 
     const formData = new FormData();
-    // 后端接收字段名为 file（单数）
     formData.append("file", csvFile);
 
     try {
@@ -230,7 +230,6 @@ function BatchSearchPage() {
       stopPolling();
     }
   };
-
 
   const isRunning = progress.status === "parsing" || progress.status === "searching";
 

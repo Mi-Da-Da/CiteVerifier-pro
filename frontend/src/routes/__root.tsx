@@ -4,14 +4,59 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
+  useNavigate,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import appCss from "../styles.css?url";
 import { LanguageProvider } from "@/lib/i18n";
-import { AuthProvider } from "@/lib/auth";
+import { AuthProvider, useAuth } from "@/lib/auth";
 import { AiChat } from "@/components/AiChat";
+
+const AUTH_PATHS = ["/login", "/register"];
+const PROTECTED_PATH_PREFIXES = ["/simple-search", "/advanced-search", "/detect", "/result", "/history"];
+
+function isProtectedPath(pathname: string) {
+  return PROTECTED_PATH_PREFIXES.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { email, ready } = useAuth();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
+  const isAuthPage = AUTH_PATHS.includes(pathname);
+  const protectedPage = isProtectedPath(pathname);
+
+  useEffect(() => {
+    if (!ready) return;
+
+    if (!email && protectedPage) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+
+    if (email && isAuthPage) {
+      navigate({ to: "/", replace: true });
+    }
+  }, [email, ready, protectedPage, isAuthPage, navigate]);
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center text-sm text-gray-400">
+        Loading…
+      </div>
+    );
+  }
+
+  if (!email && protectedPage) return null;
+  if (email && isAuthPage) return null;
+
+  return <>{children}</>;
+}
+
 
 function NotFoundComponent() {
   return (
@@ -119,10 +164,13 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>
         <AuthProvider>
-          <Outlet />
-          <AiChat />
+          <AuthGate>
+            <Outlet />
+            <AiChat />
+          </AuthGate>
         </AuthProvider>
       </LanguageProvider>
     </QueryClientProvider>
   );
 }
+
