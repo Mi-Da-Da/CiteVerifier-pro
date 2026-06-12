@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import logging
 import multiprocessing as mp
 import os
 import sqlite3
@@ -11,6 +12,8 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from user_database import init_user_db, register_user, login_user
 from fastapi import FastAPI, HTTPException, Request, File, Form, UploadFile
@@ -433,6 +436,14 @@ def page_home(request: Request) -> HTMLResponse:
     return HTMLResponse(content)
 
 
+
+
+@app.get("/baidu-search", response_class=HTMLResponse)
+def page_baidu_search(request: Request) -> HTMLResponse:
+    template_path = BASE_DIR / "templates" / "baidu_search.html"
+    with open(template_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
 @app.get("/retrieve", response_class=HTMLResponse)
 def page_retrieve(request: Request) -> HTMLResponse:
     visit_count = runtime_store.increment_counter("web_page_views")
@@ -722,3 +733,116 @@ def api_history_batch_csv(run_id: int):
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── 百度学术 / 百度搜索 接口 ─────────────────────────────────────────────────
+
+class BaiduSearchRequest(BaseModel):
+    title: str = Field(..., min_length=1, description="要检索的论文标题")
+    authors: list[str] = Field(default_factory=list, description="作者列表（可选，提高匹配精度）")
+    year: int | None = Field(None, description="发表年份（可选）")
+    use_fallback: bool = Field(True, description="百度学术无结果时是否降级到百度搜索")
+
+
+class BaiduBatchSearchRequest(BaseModel):
+    items: list[BaiduSearchRequest] = Field(..., min_length=1)
+
+
+def _build_baidu_ref(req: BaiduSearchRequest, idx: int = 1):
+    """将 BaiduSearchRequest 转成 checker.models.Reference"""
+    from checker.models import Reference
+    return Reference(
+        id=idx,
+        title=req.title,
+        authors=req.authors,
+        year=req.year,
+        raw=req.title,
+    )
+
+
+async def _search_baidu_one(req: BaiduSearchRequest, idx: int = 1) -> dict[str, Any]:
+    """对单条请求执行百度学术检索（Selenium）"""
+    from checker.clients.baidu_client import batch_search_baidu
+    results = await batch_search_baidu([req.title])
+    if not results:
+        return {"query_title": req.title, "found": False, "source": None, "result": None, "error": "未返回结果"}
+    r = results[0]
+    if r["found"]:
+        return {
+            "query_title": req.title,
+            "found": True,
+            "source": r["source"],
+            "similarity": r["similarity"],
+            "result": {
+                "title":   r["matched_title"],
+                "authors": r["authors"],
+                "year":    None,
+                "venue":   None,
+                "url":     None,
+            },
+            "error": None,
+        }
+    return {"query_title": req.title, "found": False, "source": None, "result": None, "error": r.get("error")}
+
+
+@app.post("/api/search/baidu")
+async def api_search_baidu(req: BaiduSearchRequest) -> dict[str, Any]:
+    """
+    百度学术单条检索。
+    优先查百度学术，失败时（use_fallback=true）降级到百度搜索。
+    需在环境变量中配置 SCRAPINGDOG_API_KEY（用于代理百度学术）。
+    无 API Key 时将直接请求百度学术，部分 JS 渲染内容可能缺失。
+    """
+    runtime_store.increment_counter("baidu_search_requests")
+    return await _search_baidu_one(req)
+
+
+@app.post("/api/search/baidu/batch")
+async def api_search_baidu_batch(req: BaiduBatchSearchRequest) -> dict[str, Any]:
+    """
+    百度学术批量检索（最多 50 条）。
+    一次性传给 Selenium 多浏览器并行处理，效率更高。
+    """
+    if len(req.items) > 50:
+        raise HTTPException(status_code=400, detail="批量检索上限为 50 条。")
+
+    runtime_store.increment_counter("baidu_batch_search_requests")
+
+    from checker.clients.baidu_client import batch_search_baidu
+    titles = [item.title for item in req.items]
+    raw_results = await batch_search_baidu(titles)
+
+    # 转成统一格式
+    results = []
+    for item, r in zip(req.items, raw_results):
+        if r["found"]:
+            results.append({
+                "query_title": item.title,
+                "found": True,
+                "source": r["source"],
+                "similarity": r["similarity"],
+                "result": {
+                    "title":   r["matched_title"],
+                    "authors": r["authors"],
+                    "year":    None,
+                    "venue":   None,
+                    "url":     None,
+                },
+                "error": None,
+            })
+        else:
+            results.append({
+                "query_title": item.title,
+                "found": False,
+                "source": None,
+                "result": None,
+                "error": r.get("error"),
+            })
+
+    found_count = sum(1 for r in results if r["found"])
+    return {
+        "total": len(results),
+        "found": found_count,
+        "not_found": len(results) - found_count,
+        "items": results,
+    }

@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>中文文献检索 - CiteVerifier</title>
+  <style>
+    body { font-family: 'Microsoft YaHei', sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+    .container { max-width: 960px; margin: 0 auto; }
+    h1 { color: #1976d2; text-align: center; margin-bottom: 6px; }
+    .subtitle { text-align: center; color: #666; margin-bottom: 24px; font-size: 0.95rem; }
+    .card { background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-weight: bold; margin-bottom: 6px; color: #333; }
+    input[type="text"], textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.95rem; box-sizing: border-box; }
+    input[type="text"]:focus, textarea:focus { outline: none; border-color: #1976d2; box-shadow: 0 0 0 2px rgba(25,118,210,0.15); }
+    textarea { height: 160px; resize: vertical; }
+    .btn { padding: 10px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.95rem; font-weight: bold; }
+    .btn-primary { background: #1976d2; color: #fff; }
+    .btn-primary:hover { background: #1565c0; }
+    .btn-secondary { background: #eee; color: #333; margin-left: 10px; }
+    .btn-secondary:hover { background: #ddd; }
+    .btn-success { background: #388e3c; color: #fff; margin-left: 10px; }
+    .btn-success:hover { background: #2e7d32; }
+    .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid #ddd; border-top-color: #1976d2; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+    .tab { padding: 8px 20px; border-radius: 20px; cursor: pointer; font-size: 0.9rem; border: 1px solid #ddd; background: #fff; }
+    .tab.active { background: #1976d2; color: #fff; border-color: #1976d2; }
+    .result-card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 16px; }
+    .result-found { border-left: 4px solid #388e3c; }
+    .result-not-found { border-left: 4px solid #f57c00; }
+    .result-meta { color: #555; font-size: 0.9rem; margin-bottom: 5px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; margin-left: 8px; }
+    .badge-found { background: #e8f5e9; color: #388e3c; }
+    .badge-not-found { background: #fff3e0; color: #f57c00; }
+    .sim-bar { height: 6px; background: #eee; border-radius: 3px; margin-top: 6px; }
+    .sim-fill { height: 6px; border-radius: 3px; background: #1976d2; }
+    .stats { display: flex; gap: 16px; margin-bottom: 16px; }
+    .stat-box { flex: 1; background: #f5f5f5; border-radius: 8px; padding: 12px; text-align: center; }
+    .stat-num { font-size: 1.8rem; font-weight: bold; color: #1976d2; }
+    .stat-label { font-size: 0.8rem; color: #666; }
+    .file-input-label { display: inline-block; padding: 10px 20px; background: #e3f2fd; color: #1976d2; border-radius: 6px; cursor: pointer; border: 1px dashed #1976d2; font-size: 0.9rem; }
+    .file-input-label:hover { background: #bbdefb; }
+    input[type="file"] { display: none; }
+    #loading, #batch-loading, #pdf-loading, #csv-loading { display: none; padding: 16px 0; color: #666; }
+    #result, #batch-result, #pdf-result, #csv-result { display: none; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🔍 中文文献检索</h1>
+  <p class="subtitle">通过百度学术检索中文参考文献，验证文献真实性</p>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('single', this)">单条检索</div>
+    <div class="tab" onclick="switchTab('batch', this)">批量检索</div>
+    <div class="tab" onclick="switchTab('pdf', this)">上传 PDF</div>
+    <div class="tab" onclick="switchTab('csv', this)">上传 CSV</div>
+  </div>
+
+  <!-- 单条检索 -->
+  <div id="single-panel" class="panel active">
+    <div class="card">
+      <div class="form-group">
+        <label>论文标题 *</label>
+        <input type="text" id="title" placeholder="输入中文论文标题" />
+      </div>
+      <div class="form-group">
+        <label>作者（可选，多个用逗号分隔）</label>
+        <input type="text" id="authors" placeholder="例如：张三, 李四" />
+      </div>
+      <div class="form-group">
+        <label>发表年份（可选）</label>
+        <input type="text" id="year" placeholder="例如：2023" style="width:120px" />
+      </div>
+      <button class="btn btn-primary" onclick="searchSingle()">开始检索</button>
+      <button class="btn btn-secondary" onclick="clearSingle()">清空</button>
+    </div>
+    <div id="loading"><span class="spinner"></span>正在检索百度学术，请稍候...</div>
+    <div id="result"></div>
+  </div>
+
+  <!-- 批量检索 -->
+  <div id="batch-panel" class="panel">
+    <div class="card">
+      <div class="form-group">
+        <label>批量输入标题（每行一个，最多50条）</label>
+        <textarea id="batch-titles" placeholder="紧急避险限度的利益衡量问题研究&#10;于欢案的刑法分析&#10;自然法学:理性主义的历史演进"></textarea>
+      </div>
+      <button class="btn btn-primary" onclick="searchBatch()">批量检索</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('batch-titles').value=''">清空</button>
+    </div>
+    <div id="batch-loading"><span class="spinner"></span>批量检索中，每条约10秒，请耐心等待...</div>
+    <div id="batch-result"></div>
+  </div>
+
+  <!-- 上传 PDF -->
+  <div id="pdf-panel" class="panel">
+    <div class="card">
+      <div class="form-group">
+        <label>上传中文论文 PDF（自动解析参考文献并检索）</label>
+        <label class="file-input-label">
+          📄 选择 PDF 文件
+          <input type="file" id="pdf-file" accept=".pdf" onchange="updateFileName('pdf-file','pdf-filename')" />
+        </label>
+        <span id="pdf-filename" style="margin-left:10px; color:#666; font-size:0.9rem"></span>
+      </div>
+      <button class="btn btn-primary" onclick="searchPdf()">解析并检索</button>
+    </div>
+    <div id="pdf-loading"><span class="spinner"></span>正在解析 PDF 并检索，请稍候...</div>
+    <div id="pdf-result"></div>
+  </div>
+
+  <!-- 上传 CSV -->
+  <div id="csv-panel" class="panel">
+    <div class="card">
+      <div class="form-group">
+        <label>上传 CSV 文件（需包含 title 列）</label>
+        <label class="file-input-label">
+          📊 选择 CSV 文件
+          <input type="file" id="csv-file" accept=".csv" onchange="updateFileName('csv-file','csv-filename')" />
+        </label>
+        <span id="csv-filename" style="margin-left:10px; color:#666; font-size:0.9rem"></span>
+      </div>
+      <button class="btn btn-primary" onclick="searchCsv()">批量检索</button>
+    </div>
+    <div id="csv-loading"><span class="spinner"></span>正在检索，请稍候...</div>
+    <div id="csv-result"></div>
+  </div>
+</div>
+
+<script>
+function switchTab(tab, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(tab + '-panel').classList.add('active');
+}
+
+function updateFileName(inputId, spanId) {
+  const f = document.getElementById(inputId).files[0];
+  document.getElementById(spanId).textContent = f ? f.name : '';
+}
+
+function clearSingle() {
+  ['title','authors','year'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('result').style.display = 'none';
+}
+
+function renderBatchResults(data, containerId) {
+  const el = document.getElementById(containerId);
+  let html = `<div class="stats">
+    <div class="stat-box"><div class="stat-num">${data.total}</div><div class="stat-label">总计</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:#388e3c">${data.found}</div><div class="stat-label">已找到</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:#f57c00">${data.not_found}</div><div class="stat-label">未找到</div></div>
+  </div>`;
+
+  // 导出CSV按钮
+  html += `<button class="btn btn-success" onclick="exportCsv('${containerId}')">导出 CSV</button>`;
+  html += `<div id="${containerId}-items" style="margin-top:16px">`;
+
+  data.items.forEach((item, i) => {
+    if (item.found) {
+      const sim = Math.round((item.similarity || 0) * 100);
+      html += `<div class="result-card result-found" data-title="${escHtml(item.query_title)}" data-match="${escHtml(item.result?.title||'')}" data-sim="${sim}" data-found="1">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>${i+1}. ${escHtml(item.query_title)}</strong>
+          <span class="badge badge-found">✓ 找到</span>
+        </div>
+        <div class="result-meta" style="margin-top:6px">匹配：${escHtml(item.result?.title||'-')} · 相似度 ${sim}%</div>
+        <div class="sim-bar"><div class="sim-fill" style="width:${sim}%"></div></div>
+      </div>`;
+    } else {
+      html += `<div class="result-card result-not-found" data-title="${escHtml(item.query_title)}" data-match="" data-sim="0" data-found="0">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>${i+1}. ${escHtml(item.query_title)}</strong>
+          <span class="badge badge-not-found">✗ 未找到</span>
+        </div>
+        ${item.error ? `<div class="result-meta" style="color:#999;font-size:0.85rem">${escHtml(item.error)}</div>` : ''}
+      </div>`;
+    }
+  });
+  html += '</div>';
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function exportCsv(containerId) {
+  const items = document.querySelectorAll(`#${containerId}-items .result-card`);
+  let csv = '查询标题,是否找到,匹配标题,相似度\n';
+  items.forEach(el => {
+    const title = el.dataset.title || '';
+    const found = el.dataset.found === '1' ? '是' : '否';
+    const match = el.dataset.match || '';
+    const sim = el.dataset.sim || '0';
+    csv += `"${title}","${found}","${match}","${sim}%"\n`;
+  });
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'baidu_search_results.csv';
+  a.click();
+}
+
+async function searchSingle() {
+  const title = document.getElementById('title').value.trim();
+  if (!title) { alert('请输入论文标题'); return; }
+  const authors = document.getElementById('authors').value.trim()
+    ? document.getElementById('authors').value.split(',').map(a=>a.trim()).filter(Boolean) : [];
+  const yearStr = document.getElementById('year').value.trim();
+  const year = yearStr ? parseInt(yearStr) : null;
+
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('result').style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/search/baidu', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({title, authors, year, use_fallback: true})
+    });
+    const data = await resp.json();
+    const el = document.getElementById('result');
+    if (data.found) {
+      const sim = Math.round((data.similarity||0)*100);
+      el.innerHTML = `<div class="result-card result-found">
+        <div><strong>✅ 找到匹配文献</strong><span class="badge badge-found">已找到</span></div>
+        <div class="result-meta" style="margin-top:8px"><strong>匹配标题：</strong>${escHtml(data.result?.title||'-')}</div>
+        <div class="result-meta"><strong>相似度：</strong>${sim}%</div>
+        <div class="sim-bar"><div class="sim-fill" style="width:${sim}%"></div></div>
+      </div>`;
+    } else {
+      el.innerHTML = `<div class="result-card result-not-found">
+        <div><strong>⚠️ 未找到匹配文献</strong><span class="badge badge-not-found">未找到</span></div>
+        <div class="result-meta" style="color:#f57c00;margin-top:8px">在百度学术中未检索到该文献。</div>
+        ${data.error ? `<div class="result-meta" style="color:#999;font-size:0.85rem">${escHtml(data.error)}</div>` : ''}
+      </div>`;
+    }
+    el.style.display = 'block';
+  } catch(e) {
+    document.getElementById('result').innerHTML = `<div class="result-card" style="border-left:4px solid #d32f2f"><strong>❌ 请求失败：</strong>${e.message}</div>`;
+    document.getElementById('result').style.display = 'block';
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+  }
+}
+
+async function searchBatch() {
+  const raw = document.getElementById('batch-titles').value.trim();
+  if (!raw) { alert('请输入标题列表'); return; }
+  const titles = raw.split('\n').map(t=>t.trim()).filter(Boolean).slice(0,50);
+
+  document.getElementById('batch-loading').style.display = 'block';
+  document.getElementById('batch-result').style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/search/baidu/batch', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({items: titles.map(title => ({title, use_fallback: true}))})
+    });
+    const data = await resp.json();
+    renderBatchResults(data, 'batch-result');
+  } catch(e) {
+    alert('请求失败：' + e.message);
+  } finally {
+    document.getElementById('batch-loading').style.display = 'none';
+  }
+}
+
+async function searchPdf() {
+  const file = document.getElementById('pdf-file').files[0];
+  if (!file) { alert('请选择 PDF 文件'); return; }
+
+  document.getElementById('pdf-loading').style.display = 'block';
+  document.getElementById('pdf-result').style.display = 'none';
+
+  const formData = new FormData();
+  formData.append('files', file);
+
+  try {
+    const resp = await fetch('/api/parse/pdf/baidu', {method:'POST', body: formData});
+    const data = await resp.json();
+    renderBatchResults(data, 'pdf-result');
+  } catch(e) {
+    alert('请求失败：' + e.message);
+  } finally {
+    document.getElementById('pdf-loading').style.display = 'none';
+  }
+}
+
+async function searchCsv() {
+  const file = document.getElementById('csv-file').files[0];
+  if (!file) { alert('请选择 CSV 文件'); return; }
+
+  document.getElementById('csv-loading').style.display = 'block';
+  document.getElementById('csv-result').style.display = 'none';
+
+  // 读取CSV，提取title列
+  const text = await file.text();
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) { alert('CSV 文件格式错误，需包含标题行和数据行'); document.getElementById('csv-loading').style.display='none'; return; }
+
+  const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g,'').trim().toLowerCase());
+  const titleIdx = headers.indexOf('title');
+  if (titleIdx === -1) { alert('CSV 文件需包含 title 列'); document.getElementById('csv-loading').style.display='none'; return; }
+
+  const titles = lines.slice(1).map(line => {
+    const cols = line.split(',');
+    return (cols[titleIdx] || '').replace(/^"|"$/g,'').trim();
+  }).filter(Boolean).slice(0, 50);
+
+  try {
+    const resp = await fetch('/api/search/baidu/batch', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({items: titles.map(title => ({title, use_fallback: true}))})
+    });
+    const data = await resp.json();
+    renderBatchResults(data, 'csv-result');
+  } catch(e) {
+    alert('请求失败：' + e.message);
+  } finally {
+    document.getElementById('csv-loading').style.display = 'none';
+  }
+}
+</script>
+</body>
+</html>
