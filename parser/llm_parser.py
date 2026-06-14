@@ -14,7 +14,7 @@ MAX_RETRY_TIMES = 3
 # LLM API key should be set via environment variable
 # export DASHSCOPE_API_KEY='your_api_key_here'
 if 'DASHSCOPE_API_KEY' not in os.environ:
-    os.environ['DASHSCOPE_API_KEY'] = 'sk-a3d91d98a2cd4b118ad29fd2db3954ac'
+    os.environ['DASHSCOPE_API_KEY'] = ''
 
 
 def _fallback_title(raw_str: str) -> str:

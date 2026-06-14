@@ -21,7 +21,7 @@ class GoogleSearchClient(BaseApiClient):
     def __init__(self):
         import os
         from checker.config import ApiConfig
-        api_key = os.getenv('SCRAPINGDOG_API_KEY', '6a25938695871a1f19f29a7a')
+        api_key = os.getenv('SCRAPINGDOG_API_KEY', '')
         api_config = ApiConfig(
             base_url="https://api.scrapingdog.com",
             api_key=api_key,
