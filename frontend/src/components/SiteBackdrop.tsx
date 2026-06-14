@@ -21,7 +21,7 @@ export function SiteBackdrop({ video = true }: { video?: boolean }) {
         muted
         playsInline
         className="absolute inset-0 h-full w-full object-cover"
-        src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260405_170732_8a9ccda6-5cff-4628-b164-059c500a2b41.mp4"
+        src="/__l5e/assets-v1/b0efe9e8-1d85-4f5a-8de7-320cee27e841/sky-clouds.mp4"
       />
 
       {/* 噪点叠层 */}

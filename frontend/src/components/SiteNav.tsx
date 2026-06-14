@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Menu, X, User, ChevronDown, HelpCircle, LogOut, Clock } from "lucide-react";
+import { Menu, X, User, ChevronDown, LogOut, Clock } from "lucide-react";
 import { useT, LanguageToggle } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 
@@ -39,7 +39,6 @@ export function SiteNav() {
 
   const homeLabel = t({ zh: "首页", en: "Home" });
   const loginLabel = t({ zh: "登录", en: "Sign in" });
-  const helpLabel = t({ zh: "帮助", en: "Help" });
   const searchLabel = t({ zh: "检索", en: "Search" });
   const moreLabel = t({ zh: "更多", en: "More" });
   const logoutLabel = t({ zh: "退出登录", en: "Sign out" });
@@ -108,10 +107,6 @@ export function SiteNav() {
 
         {/* 桌面端右侧按钮 */}
         <div dir="ltr" className="absolute right-4 sm:right-6 md:right-12 top-1/2 -translate-y-1/2 flex items-center gap-2 h-9">
-          <Link to="/more" className={`hidden sm:flex ${pillCls}`}>
-            <HelpCircle size={13} />
-            {helpLabel}
-          </Link>
           {email ? (
             <div ref={accountRef} className="relative hidden sm:block">
               <button onClick={() => setAccountOpen(o => !o)} className={pillCls} aria-label="Account">
@@ -181,9 +176,6 @@ export function SiteNav() {
           ))}
           <Link to="/more" onClick={() => setOpen(false)} className="py-3 px-3 rounded-lg hover:bg-gray-800/50 transition-all">
             {moreLabel}
-          </Link>
-          <Link to="/more" onClick={() => setOpen(false)} className="py-3 px-3 rounded-lg hover:bg-gray-800/50 flex items-center gap-2">
-            <HelpCircle size={16} /> {helpLabel}
           </Link>
           {email ? (
             <button

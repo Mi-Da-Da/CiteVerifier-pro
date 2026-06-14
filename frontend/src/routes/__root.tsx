@@ -14,7 +14,6 @@ import { useEffect } from "react";
 import appCss from "../styles.css?url";
 import { LanguageProvider } from "@/lib/i18n";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { AiChat } from "@/components/AiChat";
 
 const AUTH_PATHS = ["/login", "/register"];
 const PROTECTED_PATH_PREFIXES = ["/simple-search", "/advanced-search", "/detect", "/result", "/history"];
@@ -166,7 +165,6 @@ function RootComponent() {
         <AuthProvider>
           <AuthGate>
             <Outlet />
-            <AiChat />
           </AuthGate>
         </AuthProvider>
       </LanguageProvider>
