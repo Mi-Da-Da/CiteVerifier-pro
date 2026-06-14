@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Info, Mail, HelpCircle, History, Code2, MessageSquare } from "lucide-react";
+import { Info, FileText, HelpCircle, History, Code2, MessageSquare } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
@@ -24,9 +24,9 @@ function MorePage() {
       desc: t({ zh: "为学术界做一件简单的事。让每一条引用，都值得信任。", en: "We do one simple thing for academia. We make every citation worth trusting." }),
     },
     {
-      id: "contact", icon: Mail,
-      title: t({ zh: "联系方式。", en: "Contact." }),
-      desc: t({ zh: "商务合作：hello@ghostcite.example\n媒体邀约：press@ghostcite.example", en: "Partnerships: hello@ghostcite.example\nPress: press@ghostcite.example" }),
+      id: "poster", icon: FileText,
+      title: t({ zh: "团队成果。", en: "Team Results." }),
+      desc: "Poster: GHOSTCITE: A Large-Scale Analysis of Citation Validity in the Age of Large Language Models\n\nGhostCite: A Large-Scale Analysis of Citation Validity in the Age of Large Language Models",
     },
     {
       id: "faq", icon: HelpCircle,

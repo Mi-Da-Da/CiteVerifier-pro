@@ -49,6 +49,7 @@ type ProgressState = {
 function BatchSearchPage() {
   const t = useT();
   const [tab, setTab] = useState<TabKey>("titles");
+  const [lang, setLang] = useState<"zh" | "en">("zh");
 
   // 批量标题
   const [titlesValue, setTitlesValue] = useState("");
@@ -278,6 +279,30 @@ function BatchSearchPage() {
           >
             {t({ zh: "粘贴标题列表，或上传 PDF 自动提取参考文献。", en: "Paste a list of titles, or upload a PDF to extract references automatically." })}
           </p>
+
+          <div
+            className="animate-blur-fade-up flex justify-center mb-8"
+            style={{ animationDelay: "150ms" }}
+          >
+            <div className="liquid-glass rounded-full p-1 inline-flex gap-1" role="tablist">
+              {([
+                { key: "zh", label: t({ zh: "中文文献", en: "Chinese Literature" }) },
+                { key: "en", label: t({ zh: "英文文献", en: "English Literature" }) },
+              ] as { key: "zh" | "en"; label: string }[]).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setLang(opt.key)}
+                  className={`px-5 py-2 rounded-full text-sm transition-colors ${
+                    lang === opt.key
+                      ? "bg-white text-black"
+                      : "text-gray-300 hover:text-white hover:bg-white/10"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div
             className="animate-blur-fade-up liquid-glass rounded-3xl p-5 md:p-8"

@@ -20,6 +20,7 @@ function SimpleSearchPage() {
   const t = useT();
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
+  const [lang, setLang] = useState<"zh" | "en">("zh");
 
   const submit = () => {
     if (!title.trim()) {
@@ -42,6 +43,29 @@ function SimpleSearchPage() {
           >
             {t({ zh: "简单检索", en: "Simple Search" })}
           </h1>
+
+          <div
+            className="animate-blur-fade-up liquid-glass rounded-full p-1 inline-flex gap-1 mb-8"
+            style={{ animationDelay: "300ms" }}
+            role="tablist"
+          >
+            {([
+              { key: "zh", label: t({ zh: "中文文献", en: "Chinese Literature" }) },
+              { key: "en", label: t({ zh: "英文文献", en: "English Literature" }) },
+            ] as { key: "zh" | "en"; label: string }[]).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setLang(opt.key)}
+                className={`px-5 py-2 rounded-full text-sm transition-colors ${
+                  lang === opt.key
+                    ? "bg-white text-black"
+                    : "text-gray-300 hover:text-white hover:bg-white/10"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
 
           <div
             className="animate-blur-fade-up liquid-glass rounded-3xl p-3 md:p-4 flex flex-col sm:flex-row gap-3 w-full max-w-4xl"

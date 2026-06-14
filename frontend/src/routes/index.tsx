@@ -3,10 +3,15 @@ import { useState } from "react";
 import {
   Search, Sparkles, Database, Languages, Zap,
   Layers, Globe, Brain, ShieldCheck, FileSearch, BookOpen,
+  GraduationCap, Newspaper, PenLine, Library,
 } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
+import sceneTheses from "@/assets/scene-theses.png.asset.json";
+import sceneJournal from "@/assets/scene-journal.png.asset.json";
+import sceneAi from "@/assets/scene-ai.png.asset.json";
+import sceneReview from "@/assets/scene-review.png.asset.json";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -61,6 +66,8 @@ function Index() {
 
   const scenes = [
     {
+      icon: GraduationCap,
+      image: sceneTheses.url,
       title: t({ zh: "毕业论文。", en: "Theses." }),
       desc: t({
         zh: "上百条参考文献，逐条核验。在答辩前，发现问题，而不是被问到问题。",
@@ -68,6 +75,8 @@ function Index() {
       }),
     },
     {
+      icon: Newspaper,
+      image: sceneJournal.url,
       title: t({ zh: "期刊投稿。", en: "Journal submissions." }),
       desc: t({
         zh: "投稿前的最后一道防线。降低拒稿风险，让评审专注于内容。",
@@ -75,6 +84,8 @@ function Index() {
       }),
     },
     {
+      icon: PenLine,
+      image: sceneAi.url,
       title: t({ zh: "AI 写作。", en: "AI writing." }),
       desc: t({
         zh: "ChatGPT、Claude 偶尔会编造引用。我们识别它们，让 AI 真正可靠。",
@@ -82,6 +93,8 @@ function Index() {
       }),
     },
     {
+      icon: Library,
+      image: sceneReview.url,
       title: t({ zh: "文献综述。", en: "Literature reviews." }),
       desc: t({
         zh: "成百上千条候选文献，批量核验。把时间留给思考。",
@@ -142,12 +155,12 @@ function Index() {
           </div>
 
           <h1
-            className="animate-blur-fade-up text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-normal mb-6 leading-tight"
+            className="animate-blur-fade-up text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-normal mb-6 leading-tight whitespace-pre-line"
             style={{ animationDelay: "300ms", letterSpacing: "-0.04em" }}
           >
             {t({
-              zh: <>每一篇引用，<br />都真实可信。</>,
-              en: <>Every citation,<br />beyond doubt.</>,
+              zh: "每一篇引用，\n都真实可信。",
+              en: "Every citation,\nbeyond doubt.",
             })}
           </h1>
 
@@ -309,9 +322,18 @@ function Index() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 lg:gap-x-20 gap-y-32 md:gap-y-44">
           {scenes.map((s, i) => {
             const imageFirst = i % 2 === 0;
+            
             const imageBlock = (
               <div key="img" className="flex justify-center">
-                <div className="liquid-glass rounded-3xl aspect-[5/3] w-full max-w-sm" />
+                <div className="liquid-glass rounded-3xl aspect-[5/3] w-full max-w-sm flex items-center justify-center relative overflow-hidden">
+                  <img
+                    src={s.image}
+                    alt={typeof s.title === "string" ? s.title : ""}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-br from-black/10 via-transparent to-black/30 pointer-events-none" />
+                </div>
               </div>
             );
             const textBlock = (
@@ -342,10 +364,10 @@ function Index() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
             <div className="col-span-2 md:col-span-1">
               <div className="text-lg font-semibold tracking-[-0.04em] mb-3">GhostCite</div>
-              <p className="text-xs text-gray-400 leading-relaxed">
+              <p className="text-xs text-gray-400 leading-relaxed whitespace-pre-line">
                 {t({
-                  zh: <>每一篇引用，<br />都真实可信。</>,
-                  en: <>Every citation,<br />beyond doubt.</>,
+                  zh: "每一篇引用，\n都真实可信。",
+                  en: "Every citation,\nbeyond doubt.",
                 })}
               </p>
             </div>
