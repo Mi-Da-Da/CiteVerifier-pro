@@ -7,7 +7,7 @@ import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
 import { apiClient } from "@/lib/api-client";
 
-const searchSchema = z.object({ title: z.string().default("") });
+const searchSchema = z.object({ title: z.string().default(""), lang: z.enum(["zh", "en"]).default("en") });
 
 export const Route = createFileRoute("/detect")({
   component: DetectPage,
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/detect")({
 });
 
 function DetectPage() {
-  const { title } = Route.useSearch();
+  const { title, lang } = Route.useSearch();
   const navigate = useNavigate();
   const t = useT();
   const [progress, setProgress] = useState(0);
@@ -51,7 +51,7 @@ function DetectPage() {
     raf = requestAnimationFrame(animateTo85);
 
     // 同时调后端
-    apiClient.searchTitle({ title })
+    apiClient.searchTitle({ title, lang })
       .then(data => {
         if (cancelled) return;
         cancelAnimationFrame(raf);
@@ -90,7 +90,7 @@ function DetectPage() {
       .catch(() => { if (!cancelled) setFailed(true); });
 
     return () => { cancelled = true; cancelAnimationFrame(raf); };
-  }, [title, navigate]);
+  }, [title, lang, navigate]);
 
   const stage = stages.find(s => progress <= s.until) ?? stages[stages.length - 1];
 

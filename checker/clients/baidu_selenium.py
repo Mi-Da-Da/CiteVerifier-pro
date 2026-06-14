@@ -7,7 +7,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 import time
 import pandas as pd
-from difflib import SequenceMatcher
+from rapidfuzz import fuzz
 from multiprocessing import Pool, cpu_count
 import os
 
@@ -80,7 +80,7 @@ def find_best_match(search_title, titles):
     best_score = 0
 
     for title in titles:
-        score = SequenceMatcher(None, search_title.lower(), title.lower()).ratio()
+        score = fuzz.WRatio(search_title.lower(), title.lower()) / 100.0
 
         if search_title.lower() in title.lower():
             score += 0.2

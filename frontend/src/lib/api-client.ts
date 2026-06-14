@@ -14,6 +14,7 @@ export interface LoginRequest {
 export interface TitleSearchRequest {
   title: string;
   max_candidates?: number;
+  lang?: "zh" | "en";
 }
 
 export interface SearchResult {
