@@ -85,6 +85,7 @@ runtime_store = RuntimeStore(RUNTIME_DB_PATH)
 class TitleSearchRequest(BaseModel):
     title: str = Field(..., min_length=1)
     max_candidates: int = Field(default=100000, ge=1, le=500000)
+    lang: str = Field(default="en")  # zh 走百度学术, en 走 DBLP
 
 
 class BatchTitleSearchRequest(BaseModel):
@@ -509,7 +510,7 @@ def api_login(payload: LoginRequest) -> dict:
 
 
 @app.post("/api/search/title")
-def api_search_title(payload: TitleSearchRequest) -> dict[str, Any]:
+async def api_search_title(payload: TitleSearchRequest) -> dict[str, Any]:
     title = _normalize_title(payload.title)
     if not title:
         raise HTTPException(status_code=400, detail="Title is required.")
@@ -518,6 +519,20 @@ def api_search_title(payload: TitleSearchRequest) -> dict[str, Any]:
     found = False
     error_message: str | None = None
     try:
+        # 中文文献走百度学术
+        if payload.lang == "zh":
+            from checker.clients.baidu_client import batch_search_baidu
+            raw = await batch_search_baidu([title])
+            r = raw[0] if raw else {}
+            found = bool(r.get("found"))
+            return {
+                "found": found,
+                "query_title": title,
+                "dblp_title": r.get("matched_title") if found else None,
+                "dblp_title_similarity": r.get("similarity") if found else None,
+                "source": r.get("source", "baidu"),
+            }
+        # 英文文献走 DBLP
         db_path = _resolve_db_path()
         if not db_path.exists():
             raise HTTPException(status_code=404, detail="DBLP database not found.")
