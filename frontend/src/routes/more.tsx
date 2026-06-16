@@ -54,7 +54,7 @@ function MorePage() {
     <div className="relative min-h-screen w-full bg-black text-white flex flex-col">
       <SiteBackdrop />
       <SiteNav />
-      <main className="relative z-10 flex min-h-[calc(100vh-88px)] flex-col justify-center px-4 sm:px-6 md:px-12 py-12 md:py-16 max-w-6xl mx-auto w-full">
+      <main className="relative z-10 flex min-h-[calc(100vh-88px)] -translate-y-8 md:-translate-y-12 flex-col justify-center px-4 sm:px-6 md:px-12 py-12 md:py-16 max-w-6xl mx-auto w-full">
         <h1 className="animate-blur-fade-up text-4xl sm:text-5xl md:text-6xl font-normal mb-5" style={{ letterSpacing: "-0.04em" }}>
           {t({ zh: "更多。", en: "More." })}
         </h1>

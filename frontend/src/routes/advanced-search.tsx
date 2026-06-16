@@ -266,7 +266,7 @@ function BatchSearchPage() {
       <SiteNav />
 
       <section className="relative z-10 flex min-h-[calc(100vh-88px)] items-center px-4 sm:px-6 md:px-12 py-12 md:py-16">
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-5xl mx-auto w-full -translate-y-8 md:-translate-y-12">
           <h1
             className="animate-blur-fade-up text-4xl md:text-5xl font-normal mb-3 text-center"
             style={{ letterSpacing: "-0.04em" }}
