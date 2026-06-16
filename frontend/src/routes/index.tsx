@@ -144,7 +144,7 @@ function Index() {
 
       {/* Hero */}
       <section className="relative z-10 px-4 sm:px-6 md:px-12 pt-8 md:pt-20 pb-24 md:pb-32">
-        <div className="max-w-4xl mx-auto text-center flex flex-col items-center">
+        <div className="max-w-4xl mx-auto text-center flex flex-col items-center translate-y-24 md:translate-y-28">
           <div
             className="animate-blur-fade-up liquid-glass rounded-full px-5 py-2 mb-8 flex items-center gap-2 text-sm"
             style={{ animationDelay: "150ms" }}

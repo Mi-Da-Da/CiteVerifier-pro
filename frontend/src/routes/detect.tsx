@@ -80,6 +80,7 @@ function DetectPage() {
             to: "/result",
             search: {
               title,
+              lang,
               status,
               matchedTitle: data.dblp_title ?? "",
               similarity: sim !== null ? String(Math.round(sim * 100)) : "",

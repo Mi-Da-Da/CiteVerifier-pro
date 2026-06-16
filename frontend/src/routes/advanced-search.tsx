@@ -109,8 +109,10 @@ function BatchSearchPage() {
   const progressLabel = () => {
     if (progress.status === "parsing")
       return t({ zh: "第 1 步：LLM 解析 PDF 参考文献…", en: "Step 1: Parsing PDF references with LLM…" });
-    if (progress.status === "searching")
-      return t({ zh: `第 2 步：搜索 DBLP：${progress.processed} / ${progress.total}（已匹配 ${progress.found}）`, en: `Step 2: Searching DBLP: ${progress.processed} / ${progress.total} (found ${progress.found})` });
+    if (progress.status === "searching") {
+      const sourceName = lang === "zh" ? "百度学术" : "DBLP";
+      return t({ zh: `第 2 步：搜索 ${sourceName}：${progress.processed} / ${progress.total}（已匹配 ${progress.found}）`, en: `Step 2: Searching DBLP: ${progress.processed} / ${progress.total} (found ${progress.found})` });
+    }
     if (progress.status === "done")
       return t({ zh: `完成 — 共处理 ${progress.processed} 条，匹配 ${progress.found} 条`, en: `Done — ${progress.processed} processed, ${progress.found} matched` });
     if (progress.status === "error")
@@ -266,7 +268,7 @@ function BatchSearchPage() {
       <SiteNav />
 
       <section className="relative z-10 flex min-h-[calc(100vh-88px)] items-center px-4 sm:px-6 md:px-12 py-12 md:py-16">
-        <div className="max-w-5xl mx-auto w-full -translate-y-8 md:-translate-y-12">
+        <div className="max-w-5xl mx-auto w-full -translate-y-12 md:-translate-y-16">
           <h1
             className="animate-blur-fade-up text-4xl md:text-5xl font-normal mb-3 text-center"
             style={{ letterSpacing: "-0.04em" }}

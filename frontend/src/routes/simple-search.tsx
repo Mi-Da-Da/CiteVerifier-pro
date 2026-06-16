@@ -36,7 +36,7 @@ function SimpleSearchPage() {
       <SiteNav />
 
       <section className="relative z-10 flex min-h-[calc(100vh-88px)] items-center px-4 sm:px-6 md:px-12 py-12 md:py-16">
-        <div className="max-w-5xl mx-auto text-center flex flex-col items-center w-full -translate-y-8 md:-translate-y-12">
+        <div className="max-w-5xl mx-auto text-center flex flex-col items-center w-full -translate-y-12 md:-translate-y-16">
           <h1
             className="animate-blur-fade-up text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-normal mb-12"
             style={{ animationDelay: "200ms", letterSpacing: "-0.04em" }}
