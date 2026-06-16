@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import hashlib
 import io
 import logging
 import multiprocessing as mp
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -41,7 +43,7 @@ DATA_DIR = Path(os.getenv("CITEVERIFIER_DATA_DIR", str(BASE_DIR / "data"))).expa
 RUNTIME_DB_PATH = Path(
     os.getenv("CITEVERIFIER_RUNTIME_DB", str(DATA_DIR / "runtime.sqlite"))
 ).expanduser().resolve()
-MAX_BATCH_TITLES = 200
+MAX_BATCH_TITLES = 1000
 
 APP_VERSION = "0.1.0"
 
@@ -91,6 +93,7 @@ class TitleSearchRequest(BaseModel):
 class BatchTitleSearchRequest(BaseModel):
     titles: list[str] = Field(default_factory=list)
     max_candidates: int = Field(default=100000, ge=1, le=500000)
+    lang: str = Field(default="en")  # zh 走百度学术, en 走 DBLP
 
 
 class RegisterRequest(BaseModel):
@@ -185,8 +188,18 @@ def _titles_from_csv_upload(file: UploadFile) -> list[str]:
     return _normalize_title_list(titles)
 
 
-def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
-    """统一的批量标题检索逻辑，供纯标题、CSV、PDF 批量接口复用。"""
+_CJK_PATTERN = re.compile(r'[\u4e00-\u9fff]')
+
+
+def _is_chinese_title(title: str) -> bool:
+    return bool(_CJK_PATTERN.search(title))
+
+
+def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields: dict[str, dict[str, Any]] | None = None, lang: str = "en") -> dict[str, Any]:
+    """统一的批量标题检索逻辑，供纯标题、CSV、PDF 批量接口复用。
+    逐条按标题是否含中文字符分流：含中文走百度学术，不含中文走 DBLP。
+    lang 参数仅用于决定 _set_progress 展示的初始文案，不再整体控制检索路径。
+    """
     if not titles:
         raise HTTPException(status_code=400, detail="At least one title is required.")
     if len(titles) > MAX_BATCH_TITLES:
@@ -195,24 +208,64 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
             detail=f"Batch size exceeds limit ({MAX_BATCH_TITLES}).",
         )
 
-    db_path = _resolve_db_path()
-    if not db_path.exists():
-        raise HTTPException(status_code=404, detail="DBLP database not found.")
-
     runtime_store.increment_counter("batch_search_requests")
     run_id = runtime_store.start_batch_run(
         total_input=len(titles),
         max_candidates=max_candidates,
     )
 
-    _set_progress(status="searching", stage="Searching DBLP", total=len(titles), processed=0, found=0)
-
     started_at = time.perf_counter()
     found_count = 0
     items: list[dict[str, Any]] = []
     extra_item_fields = extra_item_fields or {}
 
-    batch_results = _parallel_batch_search(db_path, titles, max_candidates)
+    zh_titles = [t for t in titles if _is_chinese_title(t)]
+    en_titles = [t for t in titles if not _is_chinese_title(t)]
+
+    _set_progress(
+        status="searching",
+        stage="Searching Baidu Scholar / DBLP",
+        total=len(titles),
+        processed=0,
+        found=0,
+    )
+
+    zh_result_map: dict[str, dict[str, Any]] = {}
+    if zh_titles:
+        from checker.clients.baidu_client import batch_search_baidu
+        raw_results = asyncio.run(batch_search_baidu(zh_titles))
+        for r in raw_results:
+            qt = r.get("query_title", "")
+            zh_result_map[qt] = {
+                "query_title": qt,
+                "found": bool(r.get("found")),
+                "dblp_title": r.get("matched_title") if r.get("found") else None,
+                "dblp_title_similarity": r.get("similarity") if r.get("found") else None,
+                "dblp_id": None,
+                "year": None,
+                "venue": None,
+                "pub_type": None,
+                "source": r.get("source", "baidu"),
+            }
+
+    en_result_map: dict[str, dict[str, Any]] = {}
+    if en_titles:
+        db_path = _resolve_db_path()
+        if not db_path.exists():
+            raise HTTPException(status_code=404, detail="DBLP database not found.")
+        en_raw_results = _parallel_batch_search(db_path, en_titles, max_candidates)
+        for r in en_raw_results:
+            qt = r.get("query_title", "")
+            r.setdefault("source", "dblp")
+            en_result_map[qt] = r
+
+    # 按原始顺序合并结果，每条标题去各自的结果表里取
+    batch_results = []
+    for t in titles:
+        if _is_chinese_title(t):
+            batch_results.append(zh_result_map.get(t, {"query_title": t, "found": False, "source": "baidu"}))
+        else:
+            batch_results.append(en_result_map.get(t, {"query_title": t, "found": False, "source": "dblp"}))
 
     for idx, result in enumerate(batch_results, start=1):
         found = bool(result.get("found"))
@@ -570,7 +623,7 @@ async def api_search_title(payload: TitleSearchRequest) -> dict[str, Any]:
 @app.post("/api/search/title/batch")
 def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
     titles = _normalize_title_list(payload.titles)
-    return _run_batch_search(titles, payload.max_candidates)
+    return _run_batch_search(titles, payload.max_candidates, lang=payload.lang)
 
 
 @app.post("/api/search/csv/batch")
@@ -578,7 +631,9 @@ def api_search_csv_batch(
     file: UploadFile = File(...),
     max_candidates: int = Form(default=100000, ge=1, le=500000),
 ) -> dict[str, Any]:
-    """上传 CSV，读取标题列并批量检索 DBLP。前端发送字段名 file。"""
+    """上传 CSV，读取标题列并批量检索。前端发送字段名 file。
+    中文标题自动走百度学术，英文标题自动走 DBLP（见 _run_batch_search）。
+    """
     titles = _titles_from_csv_upload(file)
     return _run_batch_search(titles, max_candidates)
 
@@ -610,8 +665,8 @@ def api_parse_pdf(files: list[UploadFile] = File(...)):
 
 
 @app.post("/api/search/pdf/batch")
-def api_search_pdf_batch(files: list[UploadFile] = File(...)):
-    """上传一个或多个 PDF，解析参考文献并批量检索 DBLP。前端发送字段名 files。"""
+def api_search_pdf_batch(files: list[UploadFile] = File(...), lang: str = Form(default="en")):
+    """上传一个或多个 PDF，解析参考文献并批量检索。前端发送字段名 files。lang=zh 走百度学术，否则走 DBLP。"""
     temp_dir = Path("temp")
     temp_dir.mkdir(exist_ok=True)
 
@@ -660,7 +715,7 @@ def api_search_pdf_batch(files: list[UploadFile] = File(...)):
             "references": all_references,
         }
 
-    result = _run_batch_search(titles, max_candidates=100000, extra_item_fields=source_map)
+    result = _run_batch_search(titles, max_candidates=100000, extra_item_fields=source_map, lang=lang)
     result["summary"]["file_count"] = len(files)
     result["references"] = all_references
     return result

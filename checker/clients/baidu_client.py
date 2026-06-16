@@ -23,7 +23,7 @@ def _run_selenium_search(titles: List[str]) -> List[Dict]:
         from checker.clients.baidu_selenium import batch_validate_parallel
         df = batch_validate_parallel(
             titles_list=titles,
-            headless=True,
+            headless=False,  # 生产环境建议改成 True
             exact_match=False,
             similarity_threshold=0.7,
             max_workers=min(4, len(titles)),

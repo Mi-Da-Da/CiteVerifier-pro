@@ -47,11 +47,48 @@ async def llm_parse_async(text: str, is_tidy=False) -> List[Dict]:
     lines = text.split('\n')
     bracket_lines = [l for l in lines if re.match(r'^\s*\[\d+\]', l.strip())]
     dot_lines = [l for l in lines if re.match(r'^\s*\d+\.', l.strip())]
-    if len(bracket_lines) > 1:
-        # 有 [数字] 编号：用原来的切割逻辑
-        bracket_split = [i for i in re.split(r'(\[[^\]]*\][^\[]*)', text) if i.strip()]
+
+    has_bracket = len(bracket_lines) > 1
+    has_dot = len(dot_lines) > 1
+
+    if has_bracket and has_dot:
+        # 中英文文献混排，一边用 [数字] 编号、一边用 数字. 编号：
+        # 按行先分组（连续的 [数字] 行归一组，连续的 数字. 行归另一组），
+        # 各自用对应规则切割后合并，避免互斥分支漏切其中一种格式的条目。
+        groups: list[tuple[str, list[str]]] = []
+        current_kind = None
+        current_lines: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if re.match(r'^\[\d+\]', stripped):
+                kind = 'bracket'
+            elif re.match(r'^\d+\.', stripped):
+                kind = 'dot'
+            else:
+                kind = current_kind
+            if kind != current_kind and current_lines:
+                groups.append((current_kind, current_lines))
+                current_lines = []
+            current_kind = kind
+            current_lines.append(line)
+        if current_lines:
+            groups.append((current_kind, current_lines))
+
+        all_split: list[str] = []
+        for kind, group_lines in groups:
+            group_text = '\n'.join(group_lines)
+            if kind == 'bracket':
+                all_split.extend(i for i in re.split(r'(?=\[\d+\])', group_text) if i.strip())
+            elif kind == 'dot':
+                all_split.extend(i for i in re.split(r'(?=^\s*\d+\.)', group_text, flags=re.MULTILINE) if i.strip())
+            else:
+                all_split.extend(i for i in re.split(r'(\n+)', group_text) if i.strip())
+        return await _parse_numbered(all_split, semaphore)
+    elif has_bracket:
+        # 有 [数字] 编号：在每个 [数字] 处切割，避免 [J]/[M] 等文献类型标识被误判为切割点
+        bracket_split = [i for i in re.split(r'(?=\[\d+\])', text) if i.strip()]
         return await _parse_numbered(bracket_split, semaphore)
-    elif len(dot_lines) > 1:
+    elif has_dot:
         # 有 数字. 编号（如中文国标格式，每节可能从1重新编号）：按行首切割
         dot_split = [i for i in re.split(r'(?=^\s*\d+\.)', text, flags=re.MULTILINE) if i.strip()]
         return await _parse_numbered(dot_split, semaphore)

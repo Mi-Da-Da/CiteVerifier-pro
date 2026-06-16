@@ -109,10 +109,8 @@ function BatchSearchPage() {
   const progressLabel = () => {
     if (progress.status === "parsing")
       return t({ zh: "第 1 步：LLM 解析 PDF 参考文献…", en: "Step 1: Parsing PDF references with LLM…" });
-    if (progress.status === "searching") {
-      const sourceName = lang === "zh" ? "百度学术" : "DBLP";
-      return t({ zh: `第 2 步：搜索 ${sourceName}：${progress.processed} / ${progress.total}（已匹配 ${progress.found}）`, en: `Step 2: Searching DBLP: ${progress.processed} / ${progress.total} (found ${progress.found})` });
-    }
+    if (progress.status === "searching")
+      return t({ zh: `第 2 步：搜索 DBLP：${progress.processed} / ${progress.total}（已匹配 ${progress.found}）`, en: `Step 2: Searching DBLP: ${progress.processed} / ${progress.total} (found ${progress.found})` });
     if (progress.status === "done")
       return t({ zh: `完成 — 共处理 ${progress.processed} 条，匹配 ${progress.found} 条`, en: `Done — ${progress.processed} processed, ${progress.found} matched` });
     if (progress.status === "error")
@@ -139,7 +137,7 @@ function BatchSearchPage() {
       const res = await fetch("/api/search/title/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ titles: lines }),
+        body: JSON.stringify({ titles: lines, lang }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -173,6 +171,7 @@ function BatchSearchPage() {
     const formData = new FormData();
     // 后端接收字段名为 files（复数）
     formData.append("files", pdfFile);
+    formData.append("lang", lang);
 
     try {
       const res = await fetch("/api/search/pdf/batch", {
@@ -181,6 +180,7 @@ function BatchSearchPage() {
       });
       const data = await res.json();
       if (!res.ok) {
+        console.error("PDF batch search failed:", data);
         setErrMsg(data.detail || t({ zh: "请求失败。", en: "Request failed." }));
         setProgress(p => ({ ...p, status: "error" }));
         return;
@@ -188,7 +188,8 @@ function BatchSearchPage() {
       setSummary(data.summary);
       setItems(data.items);
       setProgress(p => ({ ...p, status: "done", processed: data.summary.total_processed, found: data.summary.found_count }));
-    } catch {
+    } catch (e) {
+      console.error("PDF batch search exception:", e);
       setErrMsg(t({ zh: "网络错误，请稍后重试。", en: "Network error. Please try again." }));
       setProgress(p => ({ ...p, status: "error" }));
     } finally {

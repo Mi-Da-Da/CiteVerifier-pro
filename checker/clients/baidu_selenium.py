@@ -10,8 +10,16 @@ import pandas as pd
 from rapidfuzz import fuzz
 from multiprocessing import Pool, cpu_count
 import os
+import socket
 
 driver_path = r"E:\chromedriver-win64\chromedriver-win64\chromedriver.exe"
+
+
+def _get_free_port():
+    """向操作系统申请一个当前空闲的 TCP 端口，避免端口越界或多进程并发冲突。"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('127.0.0.1', 0))
+        return s.getsockname()[1]
 
 
 def create_driver(headless=False):
@@ -22,7 +30,8 @@ def create_driver(headless=False):
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--disable-images')
-    chrome_options.add_argument(f'--remote-debugging-port={os.getpid()}')
+    debug_port = _get_free_port()
+    chrome_options.add_argument(f'--remote-debugging-port={debug_port}')
 
     if headless:
         chrome_options.add_argument('--headless=new')
@@ -53,9 +62,20 @@ def get_url_with_retry(driver, url, max_retries=3, retry_delay=2):
 
 
 def get_result_titles(driver):
-    """获取搜索结果中的所有标题和作者（获取全部，不限制数量）"""
+    """获取搜索结果中的所有标题和作者（获取全部，不限制数量）。
+    返回 (results, page_ok)：page_ok=False 表示页面本身异常（验证码/跳出搜索域名/无法读取DOM），
+    此时 results 为空不代表真的"未找到"，调用方应区别处理。
+    """
     results = []
+    page_ok = True
     try:
+        current_url = driver.current_url
+        if "xueshu.baidu.com" not in current_url:
+            return results, False
+        page_text = driver.find_element(By.TAG_NAME, "body").text
+        if "验证码" in page_text or "安全验证" in page_text:
+            return results, False
+
         items = driver.find_elements(By.CSS_SELECTOR, "[data-v-ee77df1d]")
 
         for item in items:
@@ -69,9 +89,9 @@ def get_result_titles(driver):
                 continue
 
     except Exception as e:
-        pass
+        page_ok = False
 
-    return results
+    return results, page_ok
 
 
 def find_best_match(search_title, titles):
@@ -159,26 +179,73 @@ def search_batch_in_browser(args):
                     except Exception as e:
                         result['错误信息'] = f'首次搜索失败: {str(e)[:50]}'
                         results.append(result)
+                        print(f"[浏览器 {browser_id}] [{i}/{len(titles_list)}] ⚠ {title[:30]}... -> 首次搜索失败: {str(e)[:50]}")
                         continue
                 else:
                     # 后续搜索：使用顶部的 input 输入框
                     try:
-                        search_input = driver.find_element(By.CSS_SELECTOR, "input.atomic-input.search-input")
+                        wait = WebDriverWait(driver, 10)
+                        search_input = wait.until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "input.atomic-input.search-input"))
+                        )
                         search_input.clear()
                         search_input.send_keys(title)
                         time.sleep(0.5)
                         search_input.send_keys(Keys.RETURN)
                     except Exception as e:
-                        result['错误信息'] = f'输入框定位失败: {str(e)[:50]}'
-                        results.append(result)
-                        continue
+                        # 顶部输入框定位失败：很可能页面已脱离正常搜索状态，重新加载首页后用 textarea 方式重试一次
+                        recovered = get_url_with_retry(driver, "https://xueshu.baidu.com/", max_retries=2)
+                        retried = False
+                        if recovered:
+                            try:
+                                retry_textarea = WebDriverWait(driver, 10).until(
+                                    EC.presence_of_element_located((By.CLASS_NAME, "atomic-textarea-box"))
+                                )
+                                retry_textarea.clear()
+                                retry_textarea.send_keys(title)
+                                time.sleep(0.5)
+                                retry_button = driver.find_element(By.CSS_SELECTOR, "div.send-btn")
+                                driver.execute_script("arguments[0].click();", retry_button)
+                                retried = True
+                            except Exception:
+                                retried = False
+                        if not retried:
+                            result['错误信息'] = f'输入框定位失败: {str(e)[:50]}'
+                            results.append(result)
+                            print(f"[浏览器 {browser_id}] [{i}/{len(titles_list)}] ⚠ {title[:30]}... -> 输入框定位失败: {str(e)[:50]}")
+                            continue
 
                 # 等待结果加载
                 time.sleep(2)
 
                 # 获取所有搜索结果
-                search_results = get_result_titles(driver)
+                search_results, page_ok = get_result_titles(driver)
                 titles_found = [r['title'] for r in search_results]
+
+                if not page_ok:
+                    # 页面异常（验证码/跳出搜索域名/DOM读取失败）：重新加载首页后重试一次，而不是直接判"未找到"
+                    recovered = get_url_with_retry(driver, "https://xueshu.baidu.com/", max_retries=2)
+                    if recovered:
+                        try:
+                            retry_input = WebDriverWait(driver, 10).until(
+                                EC.presence_of_element_located((By.CLASS_NAME, "atomic-textarea-box"))
+                            )
+                            retry_input.clear()
+                            retry_input.send_keys(title)
+                            time.sleep(0.5)
+                            retry_button = driver.find_element(By.CSS_SELECTOR, "div.send-btn")
+                            driver.execute_script("arguments[0].click();", retry_button)
+                            time.sleep(2)
+                            search_results, page_ok = get_result_titles(driver)
+                            titles_found = [r['title'] for r in search_results]
+                        except Exception:
+                            page_ok = False
+
+                if not page_ok:
+                    result['错误信息'] = '页面异常（验证码或访问受限），结果不可信'
+                    results.append(result)
+                    print(f"[浏览器 {browser_id}] [{i}/{len(titles_list)}] ⚠ {title[:30]}... -> 页面异常")
+                    continue
 
                 if not titles_found:
                     result['错误信息'] = '未找到搜索结果'
@@ -304,7 +371,7 @@ def main():
     try:
         results_df = batch_validate_parallel(
             titles_list=titles_to_check,
-            headless=True,
+            headless=True,  # 生产环境建议改成 True
             exact_match=False,
             similarity_threshold=0.7,
             max_workers=4

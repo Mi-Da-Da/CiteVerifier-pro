@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { z } from "zod";
 import { Check, Loader2 } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
@@ -26,6 +26,8 @@ function DetectPage() {
   const t = useT();
   const [progress, setProgress] = useState(0);
   const [failed, setFailed] = useState(false);
+  const searchedRef = useRef(false);
+  const cancelledRef = useRef(false);
 
   const stages = [
     { until: 30, text: t({ zh: "检索学术数据库", en: "Searching academic databases" }) },
@@ -37,60 +39,62 @@ function DetectPage() {
   useEffect(() => {
     if (!title) { navigate({ to: "/" }); return; }
 
-    let cancelled = false;
+    cancelledRef.current = false;
     let raf = 0;
     const startTime = Date.now();
 
-    // 动画爬到 85% 等待 API
     const animateTo85 = () => {
+      if (cancelledRef.current) return;
       const elapsed = Date.now() - startTime;
       const p = Math.min(85, (elapsed / 4000) * 85);
-      if (!cancelled) setProgress(p);
-      if (p < 85 && !cancelled) raf = requestAnimationFrame(animateTo85);
+      setProgress(p);
+      if (p < 85) raf = requestAnimationFrame(animateTo85);
     };
     raf = requestAnimationFrame(animateTo85);
 
-    // 同时调后端
-    apiClient.searchTitle({ title, lang })
-      .then(data => {
-        if (cancelled) return;
-        cancelAnimationFrame(raf);
+    if (!searchedRef.current) {
+      searchedRef.current = true;
 
-        // 跑到 100%
-        const finish = () => {
-          setProgress(prev => {
-            if (prev >= 100) return 100;
-            const next = Math.min(100, prev + 2);
-            if (next < 100) raf = requestAnimationFrame(finish);
-            return next;
-          });
-        };
-        raf = requestAnimationFrame(finish);
+      apiClient.searchTitle({ title, lang })
+        .then(data => {
+          if (cancelledRef.current) return;
 
-        setTimeout(() => {
-          if (cancelled) return;
-          const found = data.found === true;
-          const sim = data.dblp_title_similarity ?? null;
-          let status: "success" | "fake" | "unknown";
-          if (found && sim !== null && sim >= 0.8) status = "success";
-          else if (found) status = "unknown";
-          else status = "fake";
+          cancelAnimationFrame(raf);
+          const finish = () => {
+            if (cancelledRef.current) return;
+            setProgress(prev => {
+              if (prev >= 100) return 100;
+              const next = Math.min(100, prev + 2);
+              if (next < 100) raf = requestAnimationFrame(finish);
+              return next;
+            });
+          };
+          raf = requestAnimationFrame(finish);
 
-          navigate({
-            to: "/result",
-            search: {
-              title,
-              lang,
-              status,
-              matchedTitle: data.dblp_title ?? "",
-              similarity: sim !== null ? String(Math.round(sim * 100)) : "",
-            },
-          });
-        }, 600);
-      })
-      .catch(() => { if (!cancelled) setFailed(true); });
+          setTimeout(() => {
+            if (cancelledRef.current) return;
+            const found = data.found === true;
+            const sim = data.dblp_title_similarity ?? null;
+            let status: "success" | "fake" | "unknown";
+            if (found && sim !== null && sim >= 0.8) status = "success";
+            else if (found) status = "unknown";
+            else status = "fake";
 
-    return () => { cancelled = true; cancelAnimationFrame(raf); };
+            navigate({
+              to: "/result",
+              search: {
+                title,
+                status,
+                matchedTitle: data.dblp_title ?? "",
+                similarity: sim !== null ? String(Math.round(sim * 100)) : "",
+              },
+            });
+          }, 600);
+        })
+        .catch(() => { if (!cancelledRef.current) setFailed(true); });
+    }
+
+    return () => { cancelledRef.current = true; cancelAnimationFrame(raf); };
   }, [title, lang, navigate]);
 
   const stage = stages.find(s => progress <= s.until) ?? stages[stages.length - 1];
