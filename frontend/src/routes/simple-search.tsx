@@ -35,7 +35,7 @@ function SimpleSearchPage() {
       <SiteBackdrop />
       <SiteNav />
 
-      <section className="relative z-10 px-4 sm:px-6 md:px-12 pt-12 md:pt-24 pb-24">
+      <section className="relative z-10 flex min-h-[calc(100vh-88px)] items-center px-4 sm:px-6 md:px-12 py-12 md:py-16">
         <div className="max-w-5xl mx-auto text-center flex flex-col items-center">
           <h1
             className="animate-blur-fade-up text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-normal mb-12"

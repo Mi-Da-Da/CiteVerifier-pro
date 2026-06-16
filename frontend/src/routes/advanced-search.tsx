@@ -261,11 +261,11 @@ function BatchSearchPage() {
   };
 
   return (
-    <div className="relative min-h-screen w-full bg-black text-white">
+    <div className="relative min-h-screen w-full bg-black text-white flex flex-col">
       <SiteBackdrop />
       <SiteNav />
 
-      <section className="relative z-10 px-4 sm:px-6 md:px-12 pt-8 md:pt-16 pb-24">
+      <section className="relative z-10 flex min-h-[calc(100vh-88px)] items-center px-4 sm:px-6 md:px-12 py-12 md:py-16">
         <div className="max-w-5xl mx-auto">
           <h1
             className="animate-blur-fade-up text-4xl md:text-5xl font-normal mb-3 text-center"

@@ -56,7 +56,7 @@ export function SiteNav() {
         </Link>
 
         {/* 桌面端中间导航 */}
-        <div dir="ltr" className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-8 h-9">
+        <div dir="ltr" className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-12 h-9">
           <Link
             to="/"
             className="text-sm hover:text-gray-300 transition-colors flex items-center h-9 leading-none"

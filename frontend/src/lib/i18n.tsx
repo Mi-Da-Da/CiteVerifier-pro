@@ -319,6 +319,10 @@ function formatText(text: string, params?: Record<string, string | number>) {
   return text.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? `{${key}}`));
 }
 
+function stripChineseEndingPeriod(text: string) {
+  return text.replace(/。+\s*$/g, "");
+}
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("zh");
 
@@ -365,12 +369,19 @@ export function useT() {
     params?: Record<string, string | number>
   ): T => {
     const direct = pair[lang as keyof typeof pair];
-    if (typeof direct === "string") return formatText(direct, params) as T;
+    if (typeof direct === "string") {
+      const formatted = formatText(direct, params);
+      return (lang === "zh" ? stripChineseEndingPeriod(formatted) : formatted) as T;
+    }
     if (direct !== undefined) return direct as T;
 
     if (FALLBACK_LANG.includes(lang as Exclude<Lang, "zh" | "en">) && typeof pair.zh === "string") {
       const translated = UI_TRANSLATIONS[lang as Exclude<Lang, "zh" | "en">][pair.zh];
       if (translated) return formatText(translated, params) as T;
+    }
+
+    if (lang === "zh" && typeof pair.zh === "string") {
+      return stripChineseEndingPeriod(formatText(pair.zh, params)) as T;
     }
 
     return (lang === "zh" ? pair.zh : pair.en) as T;

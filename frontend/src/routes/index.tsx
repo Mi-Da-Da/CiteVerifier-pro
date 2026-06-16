@@ -8,11 +8,6 @@ import {
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
-import sceneTheses from "@/assets/scene-theses.png.asset.json";
-import sceneJournal from "@/assets/scene-journal.png.asset.json";
-import sceneAi from "@/assets/scene-ai.png.asset.json";
-import sceneReview from "@/assets/scene-review.png.asset.json";
-
 export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
@@ -67,7 +62,8 @@ function Index() {
   const scenes = [
     {
       icon: GraduationCap,
-      image: sceneTheses.url,
+      image: "/scene-images/scene-theses.png",
+      imagePosition: "50% 46%",
       title: t({ zh: "毕业论文。", en: "Theses." }),
       desc: t({
         zh: "上百条参考文献，逐条核验。在答辩前，发现问题，而不是被问到问题。",
@@ -76,7 +72,8 @@ function Index() {
     },
     {
       icon: Newspaper,
-      image: sceneJournal.url,
+      image: "/scene-images/scene-journal.png",
+      imagePosition: "50% 18%",
       title: t({ zh: "期刊投稿。", en: "Journal submissions." }),
       desc: t({
         zh: "投稿前的最后一道防线。降低拒稿风险，让评审专注于内容。",
@@ -85,7 +82,8 @@ function Index() {
     },
     {
       icon: PenLine,
-      image: sceneAi.url,
+      image: "/scene-images/scene-ai.png",
+      imagePosition: "58% 50%",
       title: t({ zh: "AI 写作。", en: "AI writing." }),
       desc: t({
         zh: "ChatGPT、Claude 偶尔会编造引用。我们识别它们，让 AI 真正可靠。",
@@ -94,7 +92,8 @@ function Index() {
     },
     {
       icon: Library,
-      image: sceneReview.url,
+      image: "/scene-images/scene-review.png",
+      imagePosition: "50% 42%",
       title: t({ zh: "文献综述。", en: "Literature reviews." }),
       desc: t({
         zh: "成百上千条候选文献，批量核验。把时间留给思考。",
@@ -330,6 +329,7 @@ function Index() {
                     src={s.image}
                     alt={typeof s.title === "string" ? s.title : ""}
                     className="absolute inset-0 w-full h-full object-cover"
+                    style={{ objectPosition: s.imagePosition }}
                     loading="lazy"
                   />
                   <div className="absolute inset-0 bg-gradient-to-br from-black/10 via-transparent to-black/30 pointer-events-none" />

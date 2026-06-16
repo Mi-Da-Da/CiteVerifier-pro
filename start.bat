@@ -1,4 +1,7 @@
 @echo off
+setlocal
+cd /d "%~dp0"
+
 echo ========================================
 echo    CiteVerifier Quick Start
 echo ========================================
@@ -57,6 +60,14 @@ echo [START] Launching services...
 echo ========================================
 echo.
 
+REM Stop stale services that may still be using the app ports.
+for %%P in (8080 8092) do (
+    for /f "tokens=5" %%A in ('netstat -ano ^| findstr /R /C:":%%P .*LISTENING"') do (
+        echo [INFO] Stopping existing service on port %%P, PID %%A...
+        taskkill /PID %%A /F >nul 2>&1
+    )
+)
+
 REM Start backend server
 echo [1/2] Starting backend server (port 8092)...
 start "CiteVerifier Backend" cmd /k "py -m uvicorn web_app:app --host 0.0.0.0 --port 8092"
@@ -66,7 +77,7 @@ timeout /t 3 /nobreak >nul
 
 REM Start frontend dev server
 echo [2/2] Starting frontend dev server (port 8080)...
-start "CiteVerifier Frontend" cmd /k "cd frontend && npm run dev"
+start "CiteVerifier Frontend" cmd /k "cd /d frontend && npm run dev -- --host 0.0.0.0 --port 8080 --strictPort"
 
 REM Wait for frontend to start
 timeout /t 5 /nobreak >nul

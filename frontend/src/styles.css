@@ -16,9 +16,80 @@ body {
 .liquid-glass {
   background: transparent;
   backdrop-filter: none;
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.32);
   box-shadow: none;
   position: relative;
+}
+
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: none;
+}
+
+.liquid-glass::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+input,
+textarea {
+  background-color: transparent !important;
+}
+
+input::placeholder,
+textarea::placeholder,
+.placeholder\:text-gray-500::placeholder {
+  color: rgba(255, 255, 255, 0.78) !important;
+  opacity: 1 !important;
+  font-weight: 500;
+  text-shadow:
+    0 1px 2px rgba(0, 24, 56, 0.42),
+    0 0 8px rgba(0, 24, 56, 0.18);
+}
+
+.text-gray-300 {
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-weight: 500;
+  text-shadow:
+    0 1px 2px rgba(0, 24, 56, 0.42),
+    0 0 8px rgba(0, 24, 56, 0.18);
+}
+
+.text-gray-400,
+.text-gray-400\/80 {
+  color: rgba(255, 255, 255, 0.82) !important;
+  font-weight: 500;
+  text-shadow:
+    0 1px 2px rgba(0, 24, 56, 0.42),
+    0 0 8px rgba(0, 24, 56, 0.18);
+}
+
+.text-gray-500 {
+  color: rgba(255, 255, 255, 0.76) !important;
+  font-weight: 500;
+  text-shadow:
+    0 1px 2px rgba(0, 24, 56, 0.42),
+    0 0 8px rgba(0, 24, 56, 0.18);
+}
+
+.liquid-glass input,
+.liquid-glass textarea,
+.liquid-glass .text-xs,
+.liquid-glass .text-sm {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  font-weight: 500;
+  text-shadow:
+    0 1px 2px rgba(0, 24, 56, 0.42),
+    0 0 8px rgba(0, 24, 56, 0.18);
 }
 
 @keyframes blurFadeUp {
@@ -81,15 +152,20 @@ body {
 
 /* 细分隔线 & hover：把白色描边换成深色低透明 */
 .ghost-theme .border-white\/10 { border-color: rgba(26, 31, 54, 0.1) !important; }
-.ghost-theme .bg-white\/25 { background-color: rgba(26, 31, 54, 0.2) !important; }
-.ghost-theme .hover\:bg-white\/10:hover { background-color: rgba(26, 31, 54, 0.06) !important; }
+.ghost-theme .bg-white\/25 { background-color: transparent !important; }
+.ghost-theme .bg-white\/10,
+.ghost-theme .bg-white\/5 {
+  background-color: transparent !important;
+}
+.ghost-theme .hover\:bg-white\/10:hover { background-color: transparent !important; }
+.ghost-theme .hover\:bg-white\/5:hover { background-color: transparent !important; }
 .ghost-theme .hover\:text-white:hover { color: #1a1f36 !important; }
 .ghost-theme .hover\:text-gray-300:hover { color: #475569 !important; }
 
 /* 移动端弹出菜单原本是 bg-gray-900/95 深色，这里也调浅 */
 .ghost-theme .bg-gray-900\/95 {
-  background-color: rgba(255, 255, 255, 0.85) !important;
-  backdrop-filter: blur(18px) saturate(160%);
+  background-color: transparent !important;
+  backdrop-filter: none;
 }
 .ghost-theme .border-gray-800 { border-color: rgba(26, 31, 54, 0.08) !important; }
 .ghost-theme .hover\:bg-gray-800\/50:hover { background-color: rgba(26, 31, 54, 0.05) !important; }
