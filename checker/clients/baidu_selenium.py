@@ -12,7 +12,7 @@ from multiprocessing import Pool, cpu_count
 import os
 import socket
 
-driver_path = r"E:\chromedriver-win64\chromedriver-win64\chromedriver.exe"
+driver_path = r"D:\\chromedriver-win64\\chromedriver.exe"
 
 
 def _get_free_port():
