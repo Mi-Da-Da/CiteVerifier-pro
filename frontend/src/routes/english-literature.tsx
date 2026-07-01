@@ -8,7 +8,7 @@ export const Route = createFileRoute("/english-literature")({
   component: EnglishLiterature,
   head: () => ({
     meta: [
-      { title: "English Literature — GhostCite" },
+      { title: "English Literature — CiteVerifier" },
       { name: "description", content: "Verify English paper titles across leading academic indexes." },
     ],
   }),

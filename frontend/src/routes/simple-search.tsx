@@ -9,7 +9,7 @@ export const Route = createFileRoute("/simple-search")({
   component: SimpleSearchPage,
   head: () => ({
     meta: [
-      { title: "简单检索 — GhostCite" },
+      { title: "简单检索 — CiteVerifier" },
       { name: "description", content: "Verify a single citation in seconds." },
     ],
   }),

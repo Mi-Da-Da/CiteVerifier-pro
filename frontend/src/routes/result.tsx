@@ -11,6 +11,7 @@ const searchSchema = z.object({
   status: z.enum(["success", "fake", "unknown"]).default("unknown"),
   matchedTitle: z.string().default(""),
   similarity: z.string().default(""),
+  lang: z.enum(["zh", "en"]).default("en"),
 });
 
 export const Route = createFileRoute("/result")({
@@ -18,8 +19,8 @@ export const Route = createFileRoute("/result")({
   validateSearch: (s) => searchSchema.parse(s),
   head: () => ({
     meta: [
-      { title: "Result — GhostCite" },
-      { name: "description", content: "GhostCite verification result." },
+      { title: "Result — CiteVerifier" },
+      { name: "description", content: "CiteVerifier verification result." },
     ],
   }),
 });
@@ -30,12 +31,14 @@ function fmt(d: Date) {
 }
 
 function ResultPage() {
-  const { title, status, matchedTitle, similarity } = Route.useSearch();
+  const { title, status, matchedTitle, similarity, lang } = Route.useSearch();
   const navigate = useNavigate();
   const t = useT();
   const [time] = useState(() => fmt(new Date()));
   const [copied, setCopied] = useState(false);
   const retryRef = useRef<HTMLButtonElement>(null);
+  const sourceName = lang === "zh" ? "百度学术" : "DBLP";
+  const sourceNameEn = lang === "zh" ? "Baidu Scholar" : "DBLP";
 
   const simNum = similarity ? parseInt(similarity, 10) : null;
   const simColor =
@@ -50,21 +53,21 @@ function ResultPage() {
       color: "text-emerald-300",
       chip: t({ zh: "已通过", en: "Verified" }),
       headline: t({ zh: "找到了。这篇论文真实存在。", en: "Found. This paper is real." }),
-      desc: t({ zh: "在 DBLP 学术数据库中检索到了可信记录。", en: "A trustworthy record was found in the DBLP academic database." }),
+      desc: t({ zh: `在${sourceName}中检索到了可信记录。`, en: `A trustworthy record was found in ${sourceNameEn}.` }),
     },
     fake: {
       icon: AlertTriangle,
       color: "text-rose-300",
       chip: t({ zh: "疑似虚假", en: "Likely fake" }),
       headline: t({ zh: "未找到来源。这条引用可能不存在。", en: "No source found. This citation may not exist." }),
-      desc: t({ zh: "在 DBLP 学术数据库中未检索到有效记录。", en: "No valid record was found in the DBLP academic database." }),
+      desc: t({ zh: `在${sourceName}中未检索到有效记录。`, en: `No valid record was found in ${sourceNameEn}.` }),
     },
     unknown: {
       icon: HelpCircle,
       color: "text-amber-300",
       chip: t({ zh: "无法判断", en: "Inconclusive" }),
       headline: t({ zh: "找到近似记录，但相似度偏低，建议人工核查。", en: "A similar record was found, but similarity is low. Manual verification recommended." }),
-      desc: t({ zh: "DBLP 中存在相近标题，但无法确认是同一篇文献。", en: "A similar title exists in DBLP, but it may not be the same paper." }),
+      desc: t({ zh: `${sourceName}中存在相近标题，但无法确认是同一篇文献。`, en: `A similar title exists in ${sourceNameEn}, but it may not be the same paper.` }),
     },
   } as const;
 
@@ -104,11 +107,11 @@ function ResultPage() {
               <div className="text-base sm:text-lg break-words">{title || t({ zh: "（空）", en: "(empty)" })}</div>
             </div>
 
-            {/* DBLP 匹配结果 */}
+            {/* Source match result */}
             {matchedTitle && (
               <div className="liquid-glass rounded-2xl p-5 mb-5">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs text-gray-400">{t({ zh: "DBLP 匹配标题", en: "DBLP matched title" })}</div>
+                  <div className="text-xs text-gray-400">{t({ zh: `${sourceName}匹配标题`, en: `${sourceNameEn} matched title` })}</div>
                   {simNum !== null && (
                     <span className={`text-sm font-medium tabular-nums ${simColor}`}>
                       {t({ zh: "相似度", en: "Similarity" })} {simNum}%
@@ -126,7 +129,7 @@ function ResultPage() {
               </div>
               <div className="liquid-glass rounded-2xl p-4">
                 <div className="text-xs text-gray-400 mb-1.5">{t({ zh: "数据来源", en: "Source" })}</div>
-                <div className="text-sm">DBLP</div>
+                <div className="text-sm">{sourceName}</div>
               </div>
             </div>
 

@@ -9,7 +9,7 @@ export const Route = createFileRoute("/history")({
   component: HistoryPage,
   head: () => ({
     meta: [
-      { title: "History — GhostCite" },
+      { title: "History — CiteVerifier" },
       { name: "description", content: "Your batch search history." },
     ],
   }),

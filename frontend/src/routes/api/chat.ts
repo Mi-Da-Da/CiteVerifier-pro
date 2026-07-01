@@ -8,7 +8,7 @@ type ChatRequestBody = {
 };
 
 const SYSTEM_PROMPTS = {
-  zh: `你是 GhostCite 的 AI 学术助手。你专门帮助用户处理学术引用、文献核验和学术写作相关的问题。
+  zh: `你是 CiteVerifier 的 AI 学术助手。你专门帮助用户处理学术引用、文献核验和学术写作相关的问题。
 
 你可以帮助用户：
 - 解释引用核验结果的含义
@@ -19,7 +19,7 @@ const SYSTEM_PROMPTS = {
 - 帮助理解论文的引用网络和影响力
 
 语气应该专业、简洁、有帮助。回答要准确，不确定时要坦诚说明。优先使用中文回答。`,
-  en: `You are GhostCite's AI academic assistant. You specialize in helping users with academic citations, literature verification, and scholarly writing.
+  en: `You are CiteVerifier's AI academic assistant. You specialize in helping users with academic citations, literature verification, and scholarly writing.
 
 You can help users:
 - Explain what citation verification results mean

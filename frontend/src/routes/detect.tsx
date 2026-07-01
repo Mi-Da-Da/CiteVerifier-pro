@@ -14,8 +14,8 @@ export const Route = createFileRoute("/detect")({
   validateSearch: (s) => searchSchema.parse(s),
   head: () => ({
     meta: [
-      { title: "Verifying — GhostCite" },
-      { name: "description", content: "GhostCite is verifying your citation." },
+      { title: "Verifying — CiteVerifier" },
+      { name: "description", content: "CiteVerifier is verifying your citation." },
     ],
   }),
 });
@@ -28,9 +28,11 @@ function DetectPage() {
   const [failed, setFailed] = useState(false);
   const searchedRef = useRef(false);
   const cancelledRef = useRef(false);
+  const sourceName = lang === "zh" ? "百度学术" : "DBLP";
+  const sourceNameEn = lang === "zh" ? "Baidu Scholar" : "DBLP";
 
   const stages = [
-    { until: 30, text: t({ zh: "检索学术数据库", en: "Searching academic databases" }) },
+    { until: 30, text: t({ zh: `搜索${sourceName}`, en: `Searching ${sourceNameEn}` }) },
     { until: 60, text: t({ zh: "比对学术索引", en: "Matching against indexes" }) },
     { until: 85, text: t({ zh: "分析引用真实性", en: "Analyzing authenticity" }) },
     { until: 100, text: t({ zh: "生成检测报告", en: "Compiling report" }) },
@@ -87,6 +89,7 @@ function DetectPage() {
                 status,
                 matchedTitle: data.dblp_title ?? "",
                 similarity: sim !== null ? String(Math.round(sim * 100)) : "",
+                lang,
               },
             });
           }, 600);

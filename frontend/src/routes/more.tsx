@@ -8,8 +8,8 @@ export const Route = createFileRoute("/more")({
   component: MorePage,
   head: () => ({
     meta: [
-      { title: "More — GhostCite" },
-      { name: "description", content: "About GhostCite, contact, FAQ, changelog, API, feedback." },
+      { title: "More — CiteVerifier" },
+      { name: "description", content: "About CiteVerifier, contact, FAQ, changelog, API, feedback." },
     ],
   }),
 });
@@ -26,7 +26,7 @@ function MorePage() {
     {
       id: "poster", icon: FileText,
       title: t({ zh: "团队成果。", en: "Team Results." }),
-      desc: "Poster: GHOSTCITE: A Large-Scale Analysis of Citation Validity in the Age of Large Language Models\n\nGhostCite: A Large-Scale Analysis of Citation Validity in the Age of Large Language Models",
+      desc: "Poster: GHOSTCITE: A Large-Scale Analysis of Citation Validity in the Age of Large Language Models\n\nCiteVerifier: A Large-Scale Analysis of Citation Validity in the Age of Large Language Models",
     },
     {
       id: "faq", icon: HelpCircle,
@@ -59,7 +59,7 @@ function MorePage() {
           {t({ zh: "更多。", en: "More." })}
         </h1>
         <p className="animate-blur-fade-up text-base sm:text-lg text-gray-300 max-w-2xl mb-12" style={{ animationDelay: "100ms" }}>
-          {t({ zh: "了解 GhostCite。和我们保持联系。", en: "Get to know GhostCite. Stay in touch." })}
+          {t({ zh: "了解 CiteVerifier。和我们保持联系。", en: "Get to know CiteVerifier. Stay in touch." })}
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">

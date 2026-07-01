@@ -97,7 +97,7 @@ textarea::placeholder,
   to { opacity: 1; filter: blur(0); transform: translateY(0); }
 }
 
-/* GhostCite 背景光斑漂浮动画 */
+/* CiteVerifier 背景光斑漂浮动画 */
 .ghost-blob { position: absolute; border-radius: 9999px; will-change: transform, opacity; }
 
 @keyframes ghostDrift1 {

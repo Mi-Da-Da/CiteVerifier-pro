@@ -10,8 +10,8 @@ export const Route = createFileRoute("/register")({
   component: RegisterPage,
   head: () => ({
     meta: [
-      { title: "Create account — GhostCite" },
-      { name: "description", content: "Create your GhostCite account." },
+      { title: "Create account — CiteVerifier" },
+      { name: "description", content: "Create your CiteVerifier account." },
     ],
   }),
 });
@@ -69,7 +69,7 @@ function RegisterPage() {
             {t({ zh: "创建账号。", en: "Create account." })}
           </h1>
           <p className="text-sm text-gray-400 mb-8">
-            {t({ zh: "加入 GhostCite。从此引用，皆可信。", en: "Join GhostCite. Cite with confidence." })}
+            {t({ zh: "加入 CiteVerifier。从此引用，皆可信。", en: "Join CiteVerifier. Cite with confidence." })}
           </p>
 
           <Field label={t({ zh: "用户名", en: "Username" })} value={username} onChange={setUsername}

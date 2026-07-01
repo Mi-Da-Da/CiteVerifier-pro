@@ -9,7 +9,7 @@ export const Route = createFileRoute("/advanced-search")({
   component: BatchSearchPage,
   head: () => ({
     meta: [
-      { title: "Batch Search — GhostCite" },
+      { title: "Batch Search — CiteVerifier" },
       { name: "description", content: "Verify many citations at once." },
     ],
   }),
@@ -50,6 +50,8 @@ function BatchSearchPage() {
   const t = useT();
   const [tab, setTab] = useState<TabKey>("titles");
   const [lang, setLang] = useState<"zh" | "en">("zh");
+  const sourceName = lang === "zh" ? "百度学术" : "DBLP";
+  const sourceNameEn = lang === "zh" ? "Baidu Scholar" : "DBLP";
 
   // 批量标题
   const [titlesValue, setTitlesValue] = useState("");
@@ -110,7 +112,7 @@ function BatchSearchPage() {
     if (progress.status === "parsing")
       return t({ zh: "第 1 步：LLM 解析 PDF 参考文献…", en: "Step 1: Parsing PDF references with LLM…" });
     if (progress.status === "searching")
-      return t({ zh: `第 2 步：搜索 DBLP：${progress.processed} / ${progress.total}（已匹配 ${progress.found}）`, en: `Step 2: Searching DBLP: ${progress.processed} / ${progress.total} (found ${progress.found})` });
+      return t({ zh: `第 2 步：搜索${sourceName}：${progress.processed} / ${progress.total}（已匹配 ${progress.found}）`, en: `Step 2: Searching ${sourceNameEn}: ${progress.processed} / ${progress.total} (found ${progress.found})` });
     if (progress.status === "done")
       return t({ zh: `完成 — 共处理 ${progress.processed} 条，匹配 ${progress.found} 条`, en: `Done — ${progress.processed} processed, ${progress.found} matched` });
     if (progress.status === "error")
@@ -131,7 +133,7 @@ function BatchSearchPage() {
     setErrMsg("");
     setSummary(null);
     setItems([]);
-    setProgress({ status: "searching", stage: "Searching DBLP", total: lines.length, processed: 0, found: 0 });
+    setProgress({ status: "searching", stage: `Searching ${sourceNameEn}`, total: lines.length, processed: 0, found: 0 });
     startPolling();
     try {
       const res = await fetch("/api/search/title/batch", {
@@ -268,8 +270,8 @@ function BatchSearchPage() {
       <SiteBackdrop />
       <SiteNav />
 
-      <section className="relative z-10 flex min-h-[calc(100vh-88px)] items-center px-4 sm:px-6 md:px-12 py-12 md:py-16">
-        <div className="max-w-5xl mx-auto w-full -translate-y-12 md:-translate-y-16">
+      <section className="relative z-10 flex min-h-[calc(100vh-88px)] items-start px-4 sm:px-6 md:px-12 pt-44 md:pt-56 pb-12 md:pb-16">
+        <div className="max-w-5xl mx-auto w-full">
           <h1
             className="animate-blur-fade-up text-4xl md:text-5xl font-normal mb-3 text-center"
             style={{ letterSpacing: "-0.04em" }}
@@ -545,7 +547,7 @@ function BatchSearchPage() {
                         <tr className="border-b border-white/10 text-gray-400 text-xs">
                           <th className="text-left px-5 py-3 w-10">#</th>
                           <th className="text-left px-5 py-3">{t({ zh: "查询标题", en: "Query title" })}</th>
-                          <th className="text-left px-5 py-3">{t({ zh: "DBLP 匹配", en: "DBLP match" })}</th>
+                          <th className="text-left px-5 py-3">{t({ zh: `${sourceName}匹配`, en: `${sourceNameEn} match` })}</th>
                           <th className="text-right px-5 py-3 w-24">{t({ zh: "相似度", en: "Similarity" })}</th>
                           <th className="text-right px-5 py-3 w-16">{t({ zh: "状态", en: "Status" })}</th>
                         </tr>

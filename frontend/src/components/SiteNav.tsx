@@ -47,12 +47,12 @@ export function SiteNav() {
 
   return (
     <>
-      <nav dir="ltr" className="relative z-50 h-[72px] md:h-[88px] px-4 sm:px-6 md:px-12">
+      <nav dir="ltr" className="relative z-[100] h-[72px] md:h-[88px] px-4 sm:px-6 md:px-12">
         <Link
           to="/"
           className="absolute left-4 sm:left-6 md:left-12 top-1/2 -translate-y-1/2 h-8 md:h-10 flex items-center text-xl md:text-2xl font-semibold tracking-[-0.04em]"
         >
-          GhostCite
+          CiteVerifier
         </Link>
 
         {/* 桌面端中间导航 */}
@@ -74,7 +74,7 @@ export function SiteNav() {
               <ChevronDown size={13} className={`transition-transform ${searchOpen ? "rotate-180" : ""}`} />
             </button>
             <div
-              className={`!absolute left-0 top-full mt-3 w-44 liquid-glass rounded-2xl p-1.5 transition-all duration-200 ${
+              className={`!absolute left-0 top-full mt-3 w-44 liquid-glass rounded-2xl p-1.5 z-[110] transition-all duration-200 ${
                 searchOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none"
               }`}
             >

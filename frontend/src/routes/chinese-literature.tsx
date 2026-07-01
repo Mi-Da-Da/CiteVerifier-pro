@@ -8,7 +8,7 @@ export const Route = createFileRoute("/chinese-literature")({
   component: ChineseLiterature,
   head: () => ({
     meta: [
-      { title: "Chinese Literature — GhostCite" },
+      { title: "Chinese Literature — CiteVerifier" },
       { name: "description", content: "Verify Chinese paper titles across mainstream academic databases." },
     ],
   }),

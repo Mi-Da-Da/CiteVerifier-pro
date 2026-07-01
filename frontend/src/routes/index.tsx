@@ -12,8 +12,8 @@ export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
     meta: [
-      { title: "GhostCite — Every citation, beyond doubt." },
-      { name: "description", content: "GhostCite verifies whether a paper truly exists. In seconds. In Chinese and English." },
+      { title: "CiteVerifier — Every citation, beyond doubt." },
+      { name: "description", content: "CiteVerifier verifies whether a paper truly exists. In seconds. In Chinese and English." },
     ],
   }),
 });
@@ -150,7 +150,7 @@ function Index() {
             style={{ animationDelay: "150ms" }}
           >
             <Sparkles size={14} />
-            <span>{t({ zh: "GhostCite · 文献真实性检测", en: "GhostCite · Citation verification" })}</span>
+            <span>{t({ zh: "CiteVerifier · 文献真实性检测", en: "CiteVerifier · Citation verification" })}</span>
           </div>
 
           <h1
@@ -363,7 +363,7 @@ function Index() {
         <div className="liquid-glass rounded-3xl p-8 md:p-10">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
             <div className="col-span-2 md:col-span-1">
-              <div className="text-lg font-semibold tracking-[-0.04em] mb-3">GhostCite</div>
+              <div className="text-lg font-semibold tracking-[-0.04em] mb-3">CiteVerifier</div>
               <p className="text-xs text-gray-400 leading-relaxed whitespace-pre-line">
                 {t({
                   zh: "每一篇引用，\n都真实可信。",
@@ -387,7 +387,7 @@ function Index() {
             ))}
           </div>
           <div className="mt-8 pt-6 border-t border-white/10 flex flex-col sm:flex-row justify-between gap-3 text-xs text-gray-500">
-            <div>© {new Date().getFullYear()} GhostCite. {t({ zh: "保留所有权利。", en: "All rights reserved." })}</div>
+            <div>© {new Date().getFullYear()} CiteVerifier. {t({ zh: "保留所有权利。", en: "All rights reserved." })}</div>
             <div className="flex gap-5">
               <Link to="/more" className="hover:text-white transition-colors">{t({ zh: "隐私政策", en: "Privacy" })}</Link>
               <Link to="/more" className="hover:text-white transition-colors">{t({ zh: "服务条款", en: "Terms" })}</Link>

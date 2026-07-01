@@ -32,7 +32,7 @@ const COMMON_BODY: Record<string, Record<Exclude<Lang, "zh" | "en">, string>> = 
   "ChatGPT、Claude 偶尔会编造引用。我们识别它们，让 AI 真正可靠。": { es: "ChatGPT y Claude a veces inventan citas. Las detectamos para que la IA sea de fiar.", ar: "قد يختلق ChatGPT وClaude اقتباسات. نكشفها لجعل الذكاء الاصطناعي موثوقاً.", fr: "ChatGPT et Claude inventent parfois des citations. Nous les détectons pour fiabiliser l'IA.", ru: "ChatGPT и Claude иногда выдумывают ссылки. Мы их находим, чтобы ИИ был надёжным." },
   "文献综述。": { es: "Revisiones bibliográficas.", ar: "مراجعات الأدبيات.", fr: "Revues de littérature.", ru: "Литературные обзоры." },
   "成百上千条候选文献，批量核验。把时间留给思考。": { es: "Miles de candidatos verificados por lotes. Dedica tu tiempo a pensar.", ar: "آلاف المرشحين يُتحقق منها دفعةً واحدة. خصّص وقتك للتفكير.", fr: "Des milliers de candidats vérifiés par lot. Consacrez votre temps à la réflexion.", ru: "Тысячи кандидатов проверяются пакетно. Уделяйте время мышлению." },
-  "GhostCite · 文献真实性检测": { es: "GhostCite · Verificación de citas", ar: "GhostCite · التحقق من الاقتباسات", fr: "GhostCite · Vérification des citations", ru: "GhostCite · Проверка цитирования" },
+  "CiteVerifier · 文献真实性检测": { es: "CiteVerifier · Verificación de citas", ar: "CiteVerifier · التحقق من الاقتباسات", fr: "CiteVerifier · Vérification des citations", ru: "CiteVerifier · Проверка цитирования" },
   "每一篇引用，\n都真实可信。": { es: "Cada cita,\nfuera de toda duda.", ar: "كل اقتباس،\nبلا شك.", fr: "Chaque citation,\nau-delà du doute.", ru: "Каждая ссылка —\nвне сомнений." },
   "输入一个标题。秒级判定真伪。远离虚假引用，远离 AI 幻觉。": { es: "Introduce un título. Verifica en segundos. Sin citas falsas ni alucinaciones de IA.", ar: "أدخل عنواناً. تحقق في ثوانٍ. بعيداً عن الاقتباسات الزائفة وهلوسات الذكاء الاصطناعي.", fr: "Saisissez un titre. Vérifiez en quelques secondes. Plus de fausses citations, plus d'hallucinations IA.", ru: "Введите название. Проверка за секунды. Без фальшивых ссылок и галлюцинаций ИИ." },
   "粘贴或输入论文标题…": { es: "Pega o escribe un título de artículo…", ar: "ألصق أو اكتب عنوان البحث…", fr: "Collez ou saisissez le titre d'un article…", ru: "Вставьте или введите название статьи…" },
@@ -81,7 +81,7 @@ const COMMON_BODY: Record<string, Record<Exclude<Lang, "zh" | "en">, string>> = 
   "用户反馈。": { es: "Comentarios.", ar: "ملاحظات.", fr: "Retours.", ru: "Отзывы." },
   "你的建议，会让产品变得更好。": { es: "Tus ideas mejoran el producto. Cuéntanos.", ar: "أفكاركم تطوّر المنتج. شاركونا.", fr: "Vos idées améliorent le produit. Dites-nous.", ru: "Ваши идеи делают продукт лучше. Поделитесь." },
   "更多。": { es: "Más.", ar: "المزيد.", fr: "Plus.", ru: "Ещё." },
-  "了解 GhostCite。和我们保持联系。": { es: "Conoce GhostCite. Mantente en contacto.", ar: "تعرّف على GhostCite. ابقَ على تواصل.", fr: "Découvrez GhostCite. Restons en contact.", ru: "Узнайте GhostCite. Оставайтесь на связи." },
+  "了解 CiteVerifier。和我们保持联系。": { es: "Conoce CiteVerifier. Mantente en contacto.", ar: "تعرّف على CiteVerifier. ابقَ على تواصل.", fr: "Découvrez CiteVerifier. Restons en contact.", ru: "Узнайте CiteVerifier. Оставайтесь на связи." },
   "海报。": { es: "Póster.", ar: "ملصق.", fr: "Affiche.", ru: "Постер." },
   "团队成果。": { es: "Resultados del equipo.", ar: "نتائج الفريق.", fr: "Résultats de l'équipe.", ru: "Результаты команды." },
 
@@ -101,7 +101,7 @@ const COMMON_BODY: Record<string, Record<Exclude<Lang, "zh" | "en">, string>> = 
 
   // Register
   "创建账号。": { es: "Crear una cuenta.", ar: "إنشاء حساب.", fr: "Créer un compte.", ru: "Создать аккаунт." },
-  "加入 GhostCite。从此引用，皆可信。": { es: "Únete a GhostCite. Citas fiables desde ya.", ar: "انضم إلى GhostCite. اقتباسات موثوقة منذ الآن.", fr: "Rejoignez GhostCite. Des citations fiables désormais.", ru: "Присоединяйтесь к GhostCite. Надёжные ссылки с этого момента." },
+  "加入 CiteVerifier。从此引用，皆可信。": { es: "Únete a CiteVerifier. Citas fiables desde ya.", ar: "انضم إلى CiteVerifier. اقتباسات موثوقة منذ الآن.", fr: "Rejoignez CiteVerifier. Des citations fiables désormais.", ru: "Присоединяйтесь к CiteVerifier. Надёжные ссылки с этого момента." },
   "3–20 位字母 / 数字 / 下划线": { es: "3–20 letras, números o guion bajo", ar: "3–20 حرفًا أو رقمًا أو شرطة سفلية", fr: "3 à 20 lettres, chiffres ou tirets bas", ru: "3–20 букв, цифр или подчёркиваний" },
   "3–20 位字母、数字或下划线。": { es: "3–20 letras, números o guion bajo.", ar: "3–20 حرفًا أو رقمًا أو شرطة سفلية.", fr: "3 à 20 lettres, chiffres ou tirets bas.", ru: "3–20 букв, цифр или подчёркиваний." },
   "再次输入密码": { es: "Repite la contraseña", ar: "أعد إدخال كلمة المرور", fr: "Confirmez le mot de passe", ru: "Повторите пароль" },
@@ -212,7 +212,7 @@ const COMMON_BODY: Record<string, Record<Exclude<Lang, "zh" | "en">, string>> = 
   "常见问题": { es: "Preguntas frecuentes", ar: "أسئلة شائعة", fr: "FAQ", ru: "Частые вопросы" },
 
   // AI chat
-  "GhostCite AI 助手": { es: "Asistente IA de GhostCite", ar: "مساعد GhostCite الذكي", fr: "Assistant IA GhostCite", ru: "ИИ-ассистент GhostCite" },
+  "CiteVerifier AI 助手": { es: "Asistente IA de CiteVerifier", ar: "مساعد CiteVerifier الذكي", fr: "Assistant IA CiteVerifier", ru: "ИИ-ассистент CiteVerifier" },
   "在线": { es: "En línea", ar: "متصل", fr: "En ligne", ru: "Онлайн" },
   "输入你的问题…": { es: "Escribe tu pregunta…", ar: "اكتب سؤالك…", fr: "Posez votre question…", ru: "Введите ваш вопрос…" },
   "问我关于引用核验、文献查找或学术写作的问题。": { es: "Pregúntame sobre verificación de citas, búsqueda bibliográfica o escritura académica.", ar: "اسألني عن التحقق من الاقتباسات أو البحث في الأدبيات أو الكتابة الأكاديمية.", fr: "Posez vos questions sur la vérification de citations, la recherche ou l'écriture académique.", ru: "Спросите о проверке ссылок, поиске литературы или академическом письме." },
@@ -425,7 +425,7 @@ export function LanguageToggle({ className = "" }: { className?: string }) {
         <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       <div
-        className={`!absolute left-0 top-full mt-3 w-40 liquid-glass rounded-2xl p-1.5 z-50 text-left transition-all duration-200 ${
+        className={`!absolute left-0 top-full mt-3 w-40 liquid-glass rounded-2xl p-1.5 z-[110] text-left transition-all duration-200 ${
           open ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none"
         }`}
       >

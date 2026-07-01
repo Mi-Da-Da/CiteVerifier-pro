@@ -11,8 +11,8 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
   head: () => ({
     meta: [
-      { title: "Sign in — GhostCite" },
-      { name: "description", content: "Sign in to GhostCite." },
+      { title: "Sign in — CiteVerifier" },
+      { name: "description", content: "Sign in to CiteVerifier." },
     ],
   }),
 });

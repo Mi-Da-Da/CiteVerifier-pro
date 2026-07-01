@@ -33,8 +33,8 @@ export function AiChat() {
   };
 
   const welcomeTitle = t({
-    zh: "GhostCite AI 助手",
-    en: "GhostCite AI Assistant",
+    zh: "CiteVerifier AI 助手",
+    en: "CiteVerifier AI Assistant",
   });
 
   const welcomeSubtitle = t({
