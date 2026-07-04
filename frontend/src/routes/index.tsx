@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  Search, Sparkles, Database, Languages, Zap,
+  Search, Sparkles, Database, Languages, Zap, Play,
   Layers, Globe, Brain, ShieldCheck, FileSearch, BookOpen,
   GraduationCap, Newspaper, PenLine, Library,
 } from "lucide-react";
@@ -23,6 +23,18 @@ function Index() {
   const t = useT();
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
+  const [demoStarted, setDemoStarted] = useState(false);
+
+  useEffect(() => {
+    const handleDemoMessage = (event: MessageEvent) => {
+      if (event.data === "citeverifier-demo-ended") {
+        setDemoStarted(false);
+      }
+    };
+
+    window.addEventListener("message", handleDemoMessage);
+    return () => window.removeEventListener("message", handleDemoMessage);
+  }, []);
 
   const submit = () => {
     if (!title.trim()) {
@@ -221,8 +233,34 @@ function Index() {
 
       {/* Video */}
       <section className="relative z-10 px-4 sm:px-6 md:px-12 pb-24 md:pb-36">
-        <div className="rounded-3xl mx-auto w-full max-w-4xl aspect-[16/9] flex items-center justify-center border border-white/15 bg-transparent backdrop-blur-0">
-          <div className="text-gray-400/80 text-sm">{t({ zh: "演示视频即将上线。", en: "Demo coming soon." })}</div>
+        <div className="relative rounded-3xl mx-auto w-full max-w-4xl aspect-[16/9] overflow-hidden border border-white/15 bg-black shadow-2xl shadow-black/40">
+          {demoStarted ? (
+            <iframe
+              src="/demo-video/citeverifier-literature-scan.html"
+              title={t({ zh: "CiteVerifier 演示视频", en: "CiteVerifier demo video" })}
+              className="h-full w-full border-0"
+              allow="autoplay"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDemoStarted(true)}
+              className="group h-full w-full overflow-hidden bg-gradient-to-br from-slate-950 via-sky-950/70 to-emerald-950/50"
+              aria-label={t({ zh: "播放演示视频", en: "Play demo video" })}
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(56,189,248,0.28),transparent_32%),radial-gradient(circle_at_72%_70%,rgba(45,212,191,0.18),transparent_30%)]" />
+              <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[length:34px_34px] opacity-30" />
+              <div className="absolute inset-0 bg-black/25" />
+              <div className="relative flex h-full flex-col items-center justify-center gap-5 text-white">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full border border-white/25 bg-white/15 pl-1 backdrop-blur-xl transition-all duration-300 group-hover:scale-105 group-hover:bg-white/25">
+                  <Play size={34} fill="currentColor" strokeWidth={1.5} />
+                </div>
+                <div className="text-base font-medium md:text-lg">
+                  {t({ zh: "点击播放演示视频", en: "Click to play demo" })}
+                </div>
+              </div>
+            </button>
+          )}
         </div>
       </section>
 
