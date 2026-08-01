@@ -235,11 +235,14 @@ function Index() {
       <section className="relative z-10 px-4 sm:px-6 md:px-12 pb-24 md:pb-36">
         <div className="relative rounded-3xl mx-auto w-full max-w-4xl aspect-[16/9] overflow-hidden border border-white/15 bg-black shadow-2xl shadow-black/40">
           {demoStarted ? (
-            <iframe
-              src="/demo-video/citeverifier-literature-scan.html"
+            <video
+              src="/demo-video/citeverifier-demo.mp4"
               title={t({ zh: "CiteVerifier 演示视频", en: "CiteVerifier demo video" })}
-              className="h-full w-full border-0"
-              allow="autoplay"
+              className="h-full w-full object-contain"
+              autoPlay
+              controls
+              playsInline
+              onEnded={() => setDemoStarted(false)}
             />
           ) : (
             <button
