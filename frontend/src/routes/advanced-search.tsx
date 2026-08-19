@@ -179,7 +179,7 @@ function BatchSearchPage() {
     const formData = new FormData();
     // 后端接收字段名为 files（复数）
     formData.append("files", pdfFile);
-    formData.append("lang", lang);
+    formData.append("lang", "auto");
 
     try {
       const res = await fetch("/api/search/pdf/batch", {

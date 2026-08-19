@@ -11,3 +11,4 @@ uvicorn[standard]>=0.30.0,<1.0.0
 jinja2>=3.1.0,<4.0.0
 python-multipart>=0.0.9,<1.0.0
 PyPDF2>=3.0.0
+serpapi>=1.1.0
