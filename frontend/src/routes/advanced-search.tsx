@@ -49,9 +49,6 @@ type ProgressState = {
 function BatchSearchPage() {
   const t = useT();
   const [tab, setTab] = useState<TabKey>("titles");
-  const [lang, setLang] = useState<"zh" | "en">("zh");
-  const sourceName = lang === "zh" ? "百度学术" : "DBLP";
-  const sourceNameEn = lang === "zh" ? "Baidu Scholar" : "DBLP";
 
   // 批量标题
   const [titlesValue, setTitlesValue] = useState("");
@@ -67,6 +64,15 @@ function BatchSearchPage() {
   // 结果
   const [summary, setSummary] = useState<BatchSummary | null>(null);
   const [items, setItems] = useState<BatchResultItem[]>([]);
+
+  // 自动检测语言：优先从结果推断，其次从输入文本推断
+  const detectLang = (text: string): "zh" | "en" =>
+    /[\u4e00-\u9fff]/.test(text) ? "zh" : "en";
+  const lang = items.length > 0
+    ? detectLang(items.map(i => i.query_title).join(" "))
+    : detectLang(titlesValue);
+  const sourceName = lang === "zh" ? "百度学术" : "DBLP";
+  const sourceNameEn = lang === "zh" ? "Baidu Scholar" : "DBLP";
 
   // 进度
   const [progress, setProgress] = useState<ProgressState>({
@@ -284,30 +290,6 @@ function BatchSearchPage() {
           >
             {t({ zh: "粘贴标题列表，或上传 PDF 自动提取参考文献。", en: "Paste a list of titles, or upload a PDF to extract references automatically." })}
           </p>
-
-          <div
-            className="animate-blur-fade-up flex justify-center mb-8"
-            style={{ animationDelay: "150ms" }}
-          >
-            <div className="liquid-glass rounded-full p-1 inline-flex gap-1" role="tablist">
-              {([
-                { key: "zh", label: t({ zh: "中文文献", en: "Chinese Literature" }) },
-                { key: "en", label: t({ zh: "英文文献", en: "English Literature" }) },
-              ] as { key: "zh" | "en"; label: string }[]).map((opt) => (
-                <button
-                  key={opt.key}
-                  onClick={() => setLang(opt.key)}
-                  className={`px-5 py-2 rounded-full text-sm transition-colors ${
-                    lang === opt.key
-                      ? "bg-white text-black"
-                      : "text-gray-300 hover:text-white hover:bg-white/10"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
 
           <div
             className="animate-blur-fade-up liquid-glass rounded-3xl p-5 md:p-8"

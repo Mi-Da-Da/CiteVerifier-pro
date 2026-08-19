@@ -162,6 +162,10 @@ async def llm_str2ref(raw_str: str, semaphore: asyncio.Semaphore) -> Dict:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, headers=headers, json=payload) as resp:
                         resp_json = await resp.json()
+                        if "choices" not in resp_json:
+                            err_msg = resp_json.get("error", {}).get("message", resp_json)
+                            print(f"API 错误 (HTTP {resp.status}): {err_msg}")
+                            raise ValueError(f"API 返回错误: {err_msg}")
                         raw_reference = resp_json["choices"][0]["message"]["content"].strip()
                         raw_reference = raw_reference[raw_reference.find('{'):raw_reference.rfind('}')+1]
                         reference = {}
@@ -267,6 +271,10 @@ References:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, headers=headers, json=payload) as resp:
                         resp_json = await resp.json()
+                        if "choices" not in resp_json:
+                            err_msg = resp_json.get("error", {}).get("message", resp_json)
+                            print(f"API 错误 (HTTP {resp.status}): {err_msg}")
+                            raise ValueError(f"API 返回错误: {err_msg}")
                         raw = resp_json["choices"][0]["message"]["content"].strip()
                         print(f"DEBUG LLM返回字符数: {len(raw)}")
                         start = raw.find('[')
