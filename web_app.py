@@ -314,6 +314,61 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
                         "google_scholar_fallback_found", delta=gs_found
                     )
 
+        # 谷歌搜索回退：谷歌学术仍未命中的标题交给 SerpApi 谷歌搜索
+        try:
+            from checker.clients.serpapi_google_search_client import (
+                batch_search_google_search,
+                is_available as google_search_is_available,
+            )
+        except Exception as exc:
+            logger.warning(f"谷歌搜索客户端加载失败，跳过回退: {exc}")
+            google_search_is_available = None  # type: ignore[assignment]
+
+        if google_search_is_available and google_search_is_available():
+            still_not_found = [
+                t for t in en_titles
+                if not en_result_map.get(t, {}).get("found")
+            ]
+            if still_not_found:
+                _set_progress(
+                    stage="Searching Google (final fallback)",
+                    total=len(titles),
+                )
+                try:
+                    gsearch_results = asyncio.run(batch_search_google_search(still_not_found))
+                except Exception as exc:
+                    logger.warning(f"谷歌搜索批量回退失败: {exc}")
+                    gsearch_results = []
+                runtime_store.increment_counter(
+                    "google_search_fallback_used", delta=len(still_not_found)
+                )
+                gsearch_found = 0
+                for gs in gsearch_results:
+                    qt = gs.get("query_title", "")
+                    if not qt:
+                        continue
+                    found = bool(gs.get("found"))
+                    if found:
+                        gsearch_found += 1
+                    en_result_map[qt] = {
+                        "query_title": qt,
+                        "found": found,
+                        "dblp_id": None,
+                        "dblp_title": gs.get("matched_title") if found else None,
+                        "dblp_title_similarity": gs.get("similarity") if found else None,
+                        "year": gs.get("year"),
+                        "venue": gs.get("venue"),
+                        "pub_type": None,
+                        "source": "google_search",
+                        "url": gs.get("url"),
+                        "authors": gs.get("authors"),
+                        "error": gs.get("error"),
+                    }
+                if gsearch_found:
+                    runtime_store.increment_counter(
+                        "google_search_fallback_found", delta=gsearch_found
+                    )
+
     # 按原始顺序合并结果，每条标题去各自的结果表里取
     batch_results = []
     for t in titles:
@@ -679,6 +734,40 @@ async def api_search_title(payload: TitleSearchRequest) -> dict[str, Any]:
                         "source": "google_scholar",
                         "url": gs.get("url"),
                         "authors": gs.get("authors"),
+                    }
+
+        # 谷歌学术仍未命中，回退到谷歌搜索（SerpApi google 引擎）
+        if not found:
+            try:
+                from checker.clients.serpapi_google_search_client import (
+                    search_single_title as google_search,
+                    is_available as google_search_is_available,
+                )
+            except Exception as exc:
+                logger.warning(f"谷歌搜索客户端加载失败，跳过回退: {exc}")
+                google_search_is_available = None  # type: ignore[assignment]
+            if google_search_is_available and google_search_is_available():
+                runtime_store.increment_counter("google_search_fallback_used")
+                try:
+                    gsearch = await google_search(title)
+                except Exception as exc:
+                    logger.warning(f"谷歌搜索单条回退失败: {exc}")
+                    gsearch = {}
+                if gsearch.get("found"):
+                    found = True
+                    runtime_store.increment_counter("google_search_fallback_found")
+                    result = {
+                        "found": True,
+                        "query_title": title,
+                        "dblp_id": None,
+                        "dblp_title": gsearch.get("matched_title"),
+                        "dblp_title_similarity": gsearch.get("similarity"),
+                        "year": gsearch.get("year"),
+                        "venue": gsearch.get("venue"),
+                        "pub_type": None,
+                        "source": "google_search",
+                        "url": gsearch.get("url"),
+                        "authors": gsearch.get("authors"),
                     }
         return result
     except HTTPException as exc:

@@ -174,7 +174,9 @@ class BaiduScholarClient:
                 raise ValueError("百度学术未返回结果")
 
             r = results[0]
-            _set_cached_result(title, r)
+            # 仅缓存找到的结果，未找到不缓存，便于下次重新搜索
+            if r.get("是否存在"):
+                _set_cached_result(title, r)
 
         if not r.get("是否存在"):
             raise ValueError(f"百度学术未找到该文献（置信度: {r.get('置信度', 0):.2f}）")
@@ -228,7 +230,9 @@ async def batch_search_baidu(titles: List[str]) -> List[Dict[str, Any]]:
             if search_title:
                 normalized = _normalize_title(search_title)
                 results_map[normalized] = r
-                _set_cached_result(search_title, r)
+                # 仅缓存找到的结果，未找到不缓存，便于下次重新搜索
+                if r.get("是否存在"):
+                    _set_cached_result(search_title, r)
 
     output = []
     for title in titles:
