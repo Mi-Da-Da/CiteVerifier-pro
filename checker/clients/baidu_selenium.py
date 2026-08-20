@@ -9,11 +9,9 @@ import time
 import pandas as pd
 from rapidfuzz import fuzz
 from multiprocessing import Pool, cpu_count
+from webdrivermanager_cn import ChromeDriverManagerAliMirror
 import os
 import socket
-
-driver_path = r"D:\\chromedriver-win64\\chromedriver.exe"
-
 
 def _get_free_port():
     """向操作系统申请一个当前空闲的 TCP 端口，避免端口越界或多进程并发冲突。"""
@@ -22,7 +20,7 @@ def _get_free_port():
         return s.getsockname()[1]
 
 
-def create_driver(headless=False):
+def create_driver(headless=False, driver_path=None):
     """创建浏览器实例"""
     chrome_options = Options()
     chrome_options.add_argument('--incognito')
@@ -35,6 +33,9 @@ def create_driver(headless=False):
 
     if headless:
         chrome_options.add_argument('--headless=new')
+
+    if not driver_path:
+        raise RuntimeError("ChromeDriver 路径为空")
 
     service = Service(driver_path)
     driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -118,7 +119,7 @@ def search_batch_in_browser(args):
     """
     单个浏览器连续搜索多个标题
     """
-    titles_list, headless, exact_match, similarity_threshold, browser_id = args
+    titles_list, headless, exact_match, similarity_threshold, browser_id, driver_path = args
 
     driver = None
     results = []
@@ -126,7 +127,7 @@ def search_batch_in_browser(args):
     print(f"[浏览器 {browser_id}] 启动，准备搜索 {len(titles_list)} 个标题")
 
     try:
-        driver = create_driver(headless)
+        driver = create_driver(headless, driver_path)
 
         # 首次加载首页
         if not get_url_with_retry(driver, "https://xueshu.baidu.com/", max_retries=3):
@@ -310,6 +311,12 @@ def split_list_into_chunks(data_list, num_chunks):
 def batch_validate_parallel(titles_list, headless=False, exact_match=False,
                             similarity_threshold=0.7, max_workers=3):
     """多浏览器并行批量验证"""
+    # 在主进程中只解析/下载一次匹配当前 Chrome 的驱动，
+    # 避免多个 Selenium 子进程同时下载同一驱动产生竞争。
+    print("正在检测 Chrome 版本并准备对应驱动...")
+    driver_path = ChromeDriverManagerAliMirror().install()
+    print(f"ChromeDriver 已准备完成: {driver_path}")
+
     if max_workers is None:
         max_workers = min(cpu_count(), len(titles_list), 4)
 
@@ -325,7 +332,7 @@ def batch_validate_parallel(titles_list, headless=False, exact_match=False,
     start_time = time.time()
 
     args_list = [
-        (chunk, headless, exact_match, similarity_threshold, i + 1)
+        (chunk, headless, exact_match, similarity_threshold, i + 1, driver_path)
         for i, chunk in enumerate(chunks)
     ]
 

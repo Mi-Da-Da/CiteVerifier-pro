@@ -58,7 +58,15 @@ class BaiduCache:
                 result_json, created_at = row
                 if time.time() - created_at < _CACHE_TTL:
                     try:
-                        return json.loads(result_json)
+                        result = json.loads(result_json)
+                        if isinstance(result, dict) and result.get("是否存在"):
+                            return result
+                        # 未命中结果不属于有效缓存；兼容清理历史脏数据。
+                        conn.execute(
+                            "DELETE FROM baidu_search_cache WHERE normalized_title = ?",
+                            (normalized_title,),
+                        )
+                        conn.commit()
                     except json.JSONDecodeError:
                         logger.warning("缓存数据 JSON 解析失败")
                         self.delete(normalized_title)
@@ -68,7 +76,8 @@ class BaiduCache:
         return None
 
     def set(self, normalized_title: str, result: Dict) -> None:
-        if not normalized_title:
+        # 缓存层自身兜底：百度学术未找到的结果绝不写入缓存。
+        if not normalized_title or not result.get("是否存在"):
             return
         result_json = json.dumps(result, ensure_ascii=False)
         with sqlite3.connect(self.db_path) as conn:

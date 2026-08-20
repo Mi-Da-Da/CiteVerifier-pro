@@ -101,7 +101,15 @@ class GoogleScholarCache:
                 result_json, created_at = row
                 if time.time() - created_at < _CACHE_TTL:
                     try:
-                        return json.loads(result_json)
+                        result = json.loads(result_json)
+                        if isinstance(result, dict) and result.get("found"):
+                            return result
+                        # 未命中结果不属于有效缓存；兼容清理历史脏数据。
+                        conn.execute(
+                            "DELETE FROM google_scholar_cache WHERE normalized_title = ?",
+                            (normalized_title,),
+                        )
+                        conn.commit()
                     except json.JSONDecodeError:
                         logger.warning("谷歌学术缓存 JSON 解析失败")
                         self.delete(normalized_title)
@@ -111,7 +119,8 @@ class GoogleScholarCache:
         return None
 
     def set(self, normalized_title: str, result: Dict) -> None:
-        if not normalized_title:
+        # 缓存层自身兜底：谷歌学术未找到的结果绝不写入缓存。
+        if not normalized_title or not result.get("found"):
             return
         result_json = json.dumps(result, ensure_ascii=False)
         with sqlite3.connect(self.db_path) as conn:
@@ -209,6 +218,8 @@ def _call_serpapi_google_scholar(query: str) -> List[Dict[str, Any]]:
         "engine": "google_scholar",
         "q": query,
         "hl": "en",
+        # SerpApi 默认缓存相同查询约一小时；未命中必须重新实时检索。
+        "no_cache": True,
     })
     if isinstance(data, dict) and data.get("error"):
         raise RuntimeError(f"SerpApi error: {data['error']}")
