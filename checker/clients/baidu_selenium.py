@@ -12,6 +12,7 @@ from multiprocessing import Pool, cpu_count
 from webdrivermanager_cn import ChromeDriverManagerAliMirror
 import os
 import socket
+import threading
 
 def _get_free_port():
     """向操作系统申请一个当前空闲的 TCP 端口，避免端口越界或多进程并发冲突。"""
@@ -308,14 +309,42 @@ def split_list_into_chunks(data_list, num_chunks):
     return [data_list[i:i + chunk_size] for i in range(0, len(data_list), chunk_size)]
 
 
+_DRIVER_PATH_CACHE: str | None = None
+_DRIVER_PATH_LOCK = threading.Lock()
+
+
+def ensure_chromedriver(driver_path: str | None = None) -> str:
+    """
+    返回已安装好的 chromedriver 可执行文件绝对路径。
+
+    首次调用会从阿里源下载匹配当前 Chrome 版本的驱动到项目根目录下的
+    chromedriver 子目录；后续调用直接复用进程级缓存，避免重复下载。
+    可显式传入 driver_path 跳过下载（供外部预安装使用）。
+    """
+    global _DRIVER_PATH_CACHE
+    if _DRIVER_PATH_CACHE:
+        return _DRIVER_PATH_CACHE
+    with _DRIVER_PATH_LOCK:
+        if _DRIVER_PATH_CACHE:
+            return _DRIVER_PATH_CACHE
+        if driver_path:
+            _DRIVER_PATH_CACHE = driver_path
+            return driver_path
+        print("正在检测 Chrome 版本并准备对应驱动...")
+        # 安装到项目根目录下的 chromedriver 子目录，基于 __file__ 解析避免受 cwd 影响
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        path = ChromeDriverManagerAliMirror(path=os.path.join(project_root, "chromedriver")).install()
+        print(f"ChromeDriver 已准备完成: {path}")
+        _DRIVER_PATH_CACHE = path
+        return path
+
+
 def batch_validate_parallel(titles_list, headless=False, exact_match=False,
-                            similarity_threshold=0.7, max_workers=3):
+                            similarity_threshold=0.7, max_workers=3,
+                            driver_path: str | None = None):
     """多浏览器并行批量验证"""
-    # 在主进程中只解析/下载一次匹配当前 Chrome 的驱动，
-    # 避免多个 Selenium 子进程同时下载同一驱动产生竞争。
-    print("正在检测 Chrome 版本并准备对应驱动...")
-    driver_path = ChromeDriverManagerAliMirror().install()
-    print(f"ChromeDriver 已准备完成: {driver_path}")
+    # 复用进程级缓存的驱动路径；系统启动时已预装，避免每次搜索重复下载
+    driver_path = ensure_chromedriver(driver_path)
 
     if max_workers is None:
         max_workers = min(cpu_count(), len(titles_list), 4)
@@ -363,36 +392,36 @@ def batch_validate_parallel(titles_list, headless=False, exact_match=False,
     return df
 
 
-def main():
-    titles_to_check = [
-        "《联合国国际货物销售合同公约》在中国法院适用问题的研究",
-        "《联合国国际货物销售合同公约》在我国的适用路径——以中化新加坡公司诉德国克虏伯公司案为例",
-        "国际民商事条约自治解释与国家主义解释的反思与重构",
-        "紧急避险限度的利益衡量问题研究",
-        "于欢案的刑法分析",
-        "女王诉杜德利和斯蒂芬斯案",
-        "自然法学:理性主义的历史演进",
-        "从专利申请的角度看中医药专利保护困局"
-    ]
+# def main():
+#     titles_to_check = [
+#         "《联合国国际货物销售合同公约》在中国法院适用问题的研究",
+#         "《联合国国际货物销售合同公约》在我国的适用路径——以中化新加坡公司诉德国克虏伯公司案为例",
+#         "国际民商事条约自治解释与国家主义解释的反思与重构",
+#         "紧急避险限度的利益衡量问题研究",
+#         "于欢案的刑法分析",
+#         "女王诉杜德利和斯蒂芬斯案",
+#         "自然法学:理性主义的历史演进",
+#         "从专利申请的角度看中医药专利保护困局"
+#     ]
 
-    try:
-        results_df = batch_validate_parallel(
-            titles_list=titles_to_check,
-            headless=True,  # 生产环境建议改成 True
-            exact_match=False,
-            similarity_threshold=0.7,
-            max_workers=4
-        )
+#     try:
+#         results_df = batch_validate_parallel(
+#             titles_list=titles_to_check,
+#             headless=True,  # 生产环境建议改成 True
+#             exact_match=False,
+#             similarity_threshold=0.7,
+#             max_workers=4
+#         )
 
-        if not results_df.empty:
-            results_df.to_csv('validation_results.csv', index=False, encoding='utf-8-sig')
-            print(f"\n💾 结果已保存到 validation_results.csv")
-            print(f"\n📋 详细结果:")
-            print(results_df[['搜索标题', '是否存在', '置信度', '作者', '耗时', '浏览器ID']].to_string())
+#         if not results_df.empty:
+#             results_df.to_csv('validation_results.csv', index=False, encoding='utf-8-sig')
+#             print(f"\n💾 结果已保存到 validation_results.csv")
+#             print(f"\n📋 详细结果:")
+#             print(results_df[['搜索标题', '是否存在', '置信度', '作者', '耗时', '浏览器ID']].to_string())
 
-    except Exception as e:
-        print(f"❌ 程序出错: {e}")
+#     except Exception as e:
+#         print(f"❌ 程序出错: {e}")
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()

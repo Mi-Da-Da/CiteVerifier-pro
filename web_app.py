@@ -18,10 +18,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from user_database import init_user_db, register_user, login_user
-from fastapi import FastAPI, HTTPException, Request, File, Form, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, HTTPException, File, Form, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from parser.llm_parser import llm_parse_pdf
@@ -63,10 +61,26 @@ def _set_progress(**kwargs: Any) -> None:
         _progress.update(kwargs)
 
 
+_prewarm_tasks: set[asyncio.Task] = set()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_user_db()
+    # 后台预安装 ChromeDriver，避免首次百度学术搜索时阻塞
+    task = asyncio.create_task(asyncio.to_thread(_prewarm_chromedriver))
+    _prewarm_tasks.add(task)
+    task.add_done_callback(_prewarm_tasks.discard)
     yield
+
+
+def _prewarm_chromedriver() -> None:
+    """系统启动时预安装 ChromeDriver，失败也不阻断启动。"""
+    try:
+        from checker.clients.baidu_selenium import ensure_chromedriver
+        ensure_chromedriver()
+    except Exception as exc:
+        logger.warning(f"ChromeDriver 预安装失败，将在首次搜索时重试: {exc}")
 
 
 app = FastAPI(
@@ -75,9 +89,6 @@ app = FastAPI(
     version=APP_VERSION,
     lifespan=lifespan,
 )
-
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 _brute_cache_lock = threading.Lock()
 _brute_cache: dict[str, list[tuple[int, str, str]]] = {}
@@ -587,58 +598,7 @@ def _items_to_csv(items: list[dict[str, Any]]) -> str:
     return output.getvalue()
 
 
-# ── 页面路由 ────────────────────────────────────────────────
-
-@app.get("/", response_class=HTMLResponse)
-def page_home(request: Request) -> HTMLResponse:
-    visit_count = runtime_store.increment_counter("web_page_views")
-    template_path = BASE_DIR / "templates" / "web_index.html"
-    with open(template_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    content = content.replace("{{ app_version }}", APP_VERSION)
-    content = content.replace("{{ visit_count }}", str(visit_count))
-    return HTMLResponse(content)
-
-
-
-
-@app.get("/baidu-search", response_class=HTMLResponse)
-def page_baidu_search(request: Request) -> HTMLResponse:
-    template_path = BASE_DIR / "templates" / "baidu_search.html"
-    with open(template_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(f.read())
-
-@app.get("/retrieve", response_class=HTMLResponse)
-def page_retrieve(request: Request) -> HTMLResponse:
-    visit_count = runtime_store.increment_counter("web_page_views")
-    template_path = BASE_DIR / "templates" / "web_index.html"
-    with open(template_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    content = content.replace("{{ app_version }}", APP_VERSION)
-    content = content.replace("{{ visit_count }}", str(visit_count))
-    return HTMLResponse(content)
-
-
-@app.get("/register", response_class=HTMLResponse)
-def page_register(request: Request) -> HTMLResponse:
-    visit_count = runtime_store.increment_counter("web_page_views")
-    template_path = BASE_DIR / "templates" / "register.html"
-    with open(template_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    content = content.replace("{{ app_version }}", APP_VERSION)
-    content = content.replace("{{ visit_count }}", str(visit_count))
-    return HTMLResponse(content)
-
-
-@app.get("/login", response_class=HTMLResponse)
-def page_login(request: Request) -> HTMLResponse:
-    visit_count = runtime_store.increment_counter("web_page_views")
-    template_path = BASE_DIR / "templates" / "login.html"
-    with open(template_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    content = content.replace("{{ app_version }}", APP_VERSION)
-    content = content.replace("{{ visit_count }}", str(visit_count))
-    return HTMLResponse(content)
+# 旧 Jinja2 页面路由（templates 目录已随 React 前端迁移移除）
 
 
 # ── API 路由 ────────────────────────────────────────────────

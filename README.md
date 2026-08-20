@@ -1,9 +1,9 @@
 ﻿<div align="center" style="display:flex;justify-content:center;align-items:center;gap:8px;">
-  <img src="./static/citeverifier-logo.svg" alt="CiteVerifier Logo" width="34" />
+  <img src="./docs/image/logo.svg" alt="CiteVerifier Logo" width="34" />
   <strong>CiteVerifier</strong>
 </div>
 
-<p align="center">A citation verification toolkit that matches references against DBLP (English) and Baidu Xueshu (Chinese), with automated PDF extraction, multi-source online search, and a modern web interface.</p>
+<p align="center">A citation verification toolkit that matches references against DBLP + Google Scholar/Google Search (English) and Baidu Xueshu (Chinese), with LLM-based PDF extraction, multi-source online search, and a modern web interface.</p>
 
 <p align="center">[<a href="./README.md"><strong>EN</strong></a>] | [<a href="./README.zh-CN.md"><strong>CN</strong></a>]</p>
 
@@ -18,10 +18,10 @@
 ## Features
 
 - **DBLP-first verification** — Fast title matching against a local DBLP SQLite database with brute-force and indexed search modes.
-- **Baidu Xueshu support** — Chinese literature verification via Baidu Xueshu API.
-- **Multi-source online search** — Uses Scrapingdog, Google Scholar, and Baidu as fallback sources for difficult cases.
-- **Automated PDF extraction** — Upload PDFs to auto-extract references via GROBID or LLM-based parsing.
-- **Batch verification** — Verify hundreds of citations at once through the web UI or CLI.
+- **Baidu Xueshu support** — Chinese literature verification driven by Selenium over Baidu Xueshu, with a 24h SQLite result cache.
+- **SerpApi fallback chain** — English titles fall back DBLP → Google Scholar → Google Search (all via SerpApi), each with its own 24h cache that only stores found hits.
+- **LLM-based PDF extraction** — Upload PDFs and extract structured references via the DashScope LLM parser (PyPDF2 text extraction + LLM structuring).
+- **Batch verification** — Verify hundreds of citations at once through the web UI.
 - **Runtime telemetry** — Stores verification history and runtime metrics in SQLite.
 - **Modern web frontend** — React 19 + TanStack Router app with shadcn/ui components.
 - **User system** — Lightweight registration/login with session management.
@@ -33,10 +33,11 @@
 | Layer | Technology |
 |-------|-----------|
 | Backend | Python 3.10+, FastAPI, Uvicorn |
-| Frontend | React 19, TanStack Router, TanStack Query, Vite |
+| Frontend | React 19, TanStack Router/Start, TanStack Query, Vite |
 | UI Kit | shadcn/ui (Radix primitives + Tailwind CSS 4) |
-| PDF Parsing | GROBID (XML), LLM-based parsing |
-| Data Sources | DBLP (local SQLite), Scrapingdog, Google Scholar, Baidu Xueshu |
+| PDF Parsing | PyPDF2 text extraction + DashScope LLM structuring |
+| Data Sources | DBLP (local SQLite), Baidu Xueshu (Selenium), Google Scholar & Google Search (SerpApi) |
+| Browser Automation | Selenium + webdrivermanager_cn (Ali mirror) + Chromium |
 | Similarity | rapidfuzz (fuzzy matching) |
 | Docs | MkDocs + Material theme |
 
@@ -46,19 +47,27 @@
 
 - Python 3.10+
 - Node.js 20+
-- pip / npm
+- Google Chrome or Chromium (for Baidu Xueshu Selenium search)
 
-YOU must set the DASHSCOPE_API_KEY environment variable to use LLM-based parsing at first:
+### Required API Keys
+
+You **must** set the following environment variables before first run:
+
 ```bash
-#cmd
+# DashScope API key — required for LLM-based PDF reference extraction
+# cmd
 set DASHSCOPE_API_KEY="your_api_key"
-#cmd(admin)
+# cmd (admin, persistent)
 setx DASHSCOPE_API_KEY "your_api_key"
-#Windows(powershell)
+# Windows (PowerShell)
 $env:DASHSCOPE_API_KEY="your_api_key"
-#linux/macOS
+# Linux / macOS
 export DASHSCOPE_API_KEY="your_api_key"
+
+# SerpApi key — required for Google Scholar / Google Search fallback
+set SERPAPI_API_KEY="your_api_key"
 ```
+
 ### Windows — One-Click Start
 
 Simply double-click or run:
@@ -67,7 +76,7 @@ Simply double-click or run:
 start.bat
 ```
 
-This automatically checks dependencies, installs packages, starts the backend (port 8092) and frontend (port 8080), then opens the browser.
+This checks dependencies, installs packages, pre-installs ChromeDriver, starts the backend (port 8092) and frontend (port 8080), then opens the browser.
 
 ### Manual Start
 
@@ -78,7 +87,7 @@ pip install -r requirements.txt
 uvicorn web_app:app --host 0.0.0.0 --port 8092 --reload
 ```
 
-The backend provides a REST API and also serves the legacy Jinja2 template UI at http://localhost:8092.
+The backend exposes a REST API at http://localhost:8092 (Swagger docs at `/docs`). ChromeDriver is pre-installed in the background on startup via `ensure_chromedriver()`.
 
 **2. Frontend (development server)**
 
@@ -101,24 +110,6 @@ docker compose up -d --build
 | API docs (Swagger) | http://localhost:8092/docs |
 | DBLP service | http://localhost:8093 |
 
-## CLI Usage
-
-The verifier.py script can be used for headless verification:
-
-```bash
-# Verify a single title
-python verifier.py --title "Attention Is All You Need" --dblp-db dblp.sqlite
-
-# Batch verification from a JSON file
-python verifier.py --input references.json --dblp-db dblp.sqlite
-
-# Run with sample data
-python verifier.py --sample
-
-# Full options
-python verifier.py --help
-```
-
 ## Configuration
 
 ### Environment Variables
@@ -126,10 +117,12 @@ python verifier.py --help
 | Variable | Default | Description |
 |----------|---------|-------------|
 | DBLP_DB_PATH | dblp.sqlite | Path to DBLP SQLite database |
-| CITEVERIFIER_DATA_DIR | ./data | Runtime data directory |
+| CITEVERIFIER_DATA_DIR | ./data | Runtime data directory (caches + telemetry) |
 | CITEVERIFIER_RUNTIME_DB | {DATA_DIR}/runtime.sqlite | Runtime telemetry database |
-| SCRAPINGDOG_API_KEY | - | API key for Scrapingdog (optional, for online fallback) |
-| DASHSCOPE_API_KEY | - | API key DeepSeek api service (important, you must set this to use LLM parse service) |
+| DASHSCOPE_API_KEY | - | DashScope API key (required for LLM PDF parsing) |
+| SERPAPI_API_KEY | - | SerpApi key (required for Google Scholar/Search fallback) |
+| CHROME_BIN | - | Chromium binary path hint (Docker sets it automatically) |
+
 ### Similarity Weights (checker/config.py)
 
 | Field | Weight | Threshold |
@@ -144,65 +137,56 @@ python verifier.py --help
 ```
 CiteVerifier-pro/
 +-- web_app.py                    # FastAPI backend entry point
-+-- verifier.py                   # CLI verification entry point
 +-- dblp_match.py                 # DBLP title search (brute-force + indexed)
-+-- runtime_store.py              # Runtime telemetry storage
-+-- reference_storage_service.py  # Reference storage service
-+-- unified_database.py           # Unified DB layer (ScholarRecord)
++-- runtime_store.py              # Runtime telemetry & history storage
 +-- user_database.py              # User auth (register/login)
-+-- parsed_references_database.py # Parsed references persistence
-+-- grobid_parser_to_xml.py       # GROBID XML output conversion
-+-- build_dblp_sqlite.py          # Build DBLP SQLite database
++-- build_dblp_sqlite.py          # Build DBLP SQLite database (deploy tool)
 +-- start.bat                     # Windows one-click launcher
 +-- requirements.txt              # Python dependencies
 +-- Dockerfile                    # Backend Docker image
 +-- docker-compose.yml            # Multi-service Docker setup
 |
-+-- checker/                      # Core verification engine
-|   +-- config.py                 # API keys and similarity config
-|   +-- models.py                 # Data models (Reference, VerificationResult, etc.)
++-- checker/                      # Verification engine
+|   +-- config.py                 # API config + similarity weights
+|   +-- models.py                 # Data models (Reference, ExternalReference)
 |   +-- utils.py                  # String/author similarity utilities
-|   +-- logger_config.py          # Logging configuration
 |   +-- clients/                  # Online search clients
-|       +-- base_client.py
-|       +-- baidu_client.py
-|       +-- baidu_selenium.py
-|       +-- google_search_client.py
-|       +-- scrapingdog_client.py
+|       +-- baidu_client.py        # Baidu Xueshu (cache + dispatch)
+|       +-- baidu_selenium.py      # Selenium-driven Baidu Xueshu search
+|       +-- serpapi_google_scholar_client.py  # Google Scholar (SerpApi)
+|       +-- serpapi_google_search_client.py  # Google Search (SerpApi)
 |
 +-- parser/                       # Reference parser
-|   +-- grobid_parser.py          # GROBID-based PDF parsing
-|   +-- llm_parser.py             # LLM-based reference extraction
-|   +-- format/                   # Output formatting
-|   +-- utils/                    # Parser utilities
+|   +-- llm_parser.py             # LLM-based reference extraction (DashScope)
+|   +-- format/utils.py           # Text cleaning (clean_text, extract_id)
+|   +-- utils/pdf_reader.py       # PyPDF2 text extraction
 |
 +-- frontend/                     # React web application
 |   +-- src/
-|       +-- routes/               # TanStack Router routes
-|       |   +-- index.tsx         # Home page
-|       |   +-- simple-search.tsx # Single title search
-|       |   +-- advanced-search.tsx # Batch search
-|       |   +-- english-literature.tsx # DBLP search page
-|       |   +-- chinese-literature.tsx # Baidu Xueshu search
-|       |   +-- detect.tsx        # PDF upload and extract
-|       |   +-- result.tsx        # Verification result viewer
-|       |   +-- history.tsx       # Verification history
-|       |   +-- login.tsx / register.tsx # User auth
-|       |   +-- more.tsx          # Settings / about
-|       |   +-- api/              # Server-side API route handlers
-|       +-- components/           # shadcn/ui components
-|       +-- hooks/                # Custom React hooks
-|       +-- lib/                  # Utility libraries
-|       +-- styles.css            # Global styles + Tailwind
+|   |   +-- routes/               # TanStack Router file routes
+|   |   |   +-- index.tsx         # Home page
+|   |   |   +-- simple-search.tsx # Single title search
+|   |   |   +-- advanced-search.tsx # Batch search
+|   |   |   +-- english-literature.tsx # DBLP search page
+|   |   |   +-- chinese-literature.tsx # Baidu Xueshu search
+|   |   |   +-- detect.tsx        # PDF upload and extract
+|   |   |   +-- result.tsx        # Verification result viewer
+|   |   |   +-- history.tsx       # Verification history
+|   |   |   +-- login.tsx / register.tsx # User auth
+|   |   |   +-- more.tsx          # Settings / about
+|   |   |   +-- api/              # TanStack Start server-side API routes
+|   |   +-- components/           # AiChat, SiteBackdrop, SiteNav + shadcn/ui
+|   |   +-- hooks/                # Custom React hooks
+|   |   +-- lib/                  # api-client, auth, i18n, ai-gateway, utils
+|   |   +-- styles.css            # Global styles + Tailwind
+|   +-- public/                   # Demo video & scene images
 |
 +-- docs/                         # MkDocs documentation source
-|   +-- en/                       # English docs
-|   +-- zh/                       # Chinese docs
-|
-+-- static/                       # Static assets (logo, CSS, etc.)
-+-- templates/                    # Jinja2 HTML templates (legacy UI)
-+-- assets/                       # Miscellaneous assets
+    +-- en/                       # English docs
+    +-- zh/                       # Chinese docs
 ```
+
+> Runtime-generated artifacts (not in the repo): `data/` (search caches + runtime.sqlite), `chromedriver/` (ChromeDriver cache), `dblp.sqlite`, `users.db`.
 
 ## API Endpoints
 
@@ -210,20 +194,24 @@ Key backend API routes (served on port 8092):
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| /api/search | POST | Single title DBLP search |
-| /api/search/batch | POST | Batch title search |
-| /api/parse/pdf | POST | Extract references from PDF |
+| /api/health | GET | Service & DBLP DB health check |
+| /api/progress | GET | Batch search progress |
+| /api/search/title | POST | Single title search (zh→Baidu, en→DBLP+fallback) |
+| /api/search/title/batch | POST | Batch title search |
+| /api/parse/pdf | POST | Extract references from a PDF |
 | /api/register | POST | User registration |
 | /api/login | POST | User login |
+| /api/search/baidu | POST | Single Baidu Xueshu search |
+| /api/search/baidu/batch | POST | Batch Baidu Xueshu search |
 
-Frontend API route handlers (served on port 8080 via TanStack Start) proxy or process search, batch, and parse requests on the server side.
+Frontend server-side API routes (`frontend/src/routes/api/`) proxy search, batch, and parse requests to the backend.
 
 ## Documentation
 
 - English MkDocs: https://citeverifier.readthedocs.io/en/latest/
-- Docs source code: docs/en/, docs/zh/
-- Local preview: mkdocs serve
+- Docs source: docs/en/, docs/zh/
+- Local preview: `mkdocs serve`
 
 ## License
 
-See LICENSE file for details.
+See the LICENSE file for details.

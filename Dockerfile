@@ -6,16 +6,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# 百度学术 Selenium 检索需要 Chromium 浏览器二进制与中文字体；
+# 软链 google-chrome 让 Selenium 默认能定位到浏览器。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/chromium /usr/bin/google-chrome
+
 COPY requirements.txt /app/requirements.txt
 RUN pip install -r /app/requirements.txt
 
-COPY web_app.py /app/web_app.py
-COPY dblp_match.py /app/dblp_match.py
-COPY runtime_store.py /app/runtime_store.py
-COPY templates /app/templates
-COPY static /app/static
+# 后端 Web 运行所需文件（templates/static 已随 React 前端迁移移除，verifier CLI 通路不打包）
+COPY web_app.py dblp_match.py runtime_store.py user_database.py /app/
+COPY parser /app/parser
+COPY checker /app/checker
 
-VOLUME ["/data"]
+# ChromeDriver 由 webdrivermanager_cn 运行时下载到 /app/chromedriver 子目录
+# 运行时数据（runtime.sqlite、各搜索缓存 db）落到 /runtime，由 docker-compose 挂卷
+VOLUME ["/runtime"]
 EXPOSE 8092
 
 CMD ["uvicorn", "web_app:app", "--host", "0.0.0.0", "--port", "8092"]

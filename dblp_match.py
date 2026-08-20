@@ -110,23 +110,6 @@ def normalize_title(s: str) -> str:
 
 # ============== SQLite Database Functions ==============
 
-def build_dblp_db(
-    dblp_xml: Path,
-    db_path: Path,
-    batch_size: int = 50000,
-) -> None:
-    """
-    Deprecated.
-
-    DB building is no longer provided by CiteVerifier. Use the DblpService backend to build
-    `dblp.sqlite` in fullmeta mode, then point `verifier.py --dblp-db` to that database.
-    """
-    raise RuntimeError(
-        "Building DBLP databases from CiteVerifier is disabled. "
-        "Use DblpService to build dblp.sqlite, then pass --dblp-db to verifier.py."
-    )
-
-
 def _sqlite_readonly_fast(conn: sqlite3.Connection) -> None:
     """Tune SQLite for read-heavy workload (faster, less safe for writes)."""
     conn.execute("PRAGMA synchronous = NORMAL")

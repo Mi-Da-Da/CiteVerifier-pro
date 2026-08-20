@@ -37,18 +37,6 @@ class _Config:
         """根据名称返回 API 配置，Key 从环境变量读取"""
         name = name.lower()
 
-        if name == "scrapingdog":
-            return ApiConfig(
-                base_url="https://api.scrapingdog.com/scholar",
-                api_key=os.getenv("SCRAPINGDOG_API_KEY", ""),
-                timeout=10,
-            )
-        if name == "scrapingdog_google":
-            return ApiConfig(
-                base_url="https://api.scrapingdog.com/google",
-                api_key=os.getenv("SCRAPINGDOG_API_KEY", ""),
-                timeout=10,
-            )
         raise ValueError(f"未知的 API 配置名称: {name}")
 
     def get_similarity_threshold(self, field: str) -> float:
