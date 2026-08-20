@@ -151,6 +151,7 @@ function BatchSearchPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ titles: lines, lang }),
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) {
@@ -190,6 +191,7 @@ function BatchSearchPage() {
       const res = await fetch("/api/search/pdf/batch", {
         method: "POST",
         body: formData,
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) {
@@ -230,6 +232,7 @@ function BatchSearchPage() {
       const res = await fetch("/api/search/csv/batch", {
         method: "POST",
         body: formData,
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) {
@@ -571,7 +574,7 @@ function BatchSearchPage() {
                           const simPct = sim != null ? (sim * 100).toFixed(1) : null;
                           const simNum = simPct != null ? parseFloat(simPct) : null;
                         const simColor = simNum == null ? "text-gray-500"
-                            : simNum >= 80 ? "text-emerald-300"
+                            : simNum >= 90 ? "text-emerald-300"
                             : simNum >= 50 ? "text-amber-300"
                             : "text-rose-300";
                           return (

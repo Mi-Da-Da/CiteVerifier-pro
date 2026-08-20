@@ -51,7 +51,7 @@ function HistoryPage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/history/batch?limit=20&offset=0")
+    fetch("/api/history/batch?limit=20&offset=0", { credentials: "include" })
       .then(r => r.json())
       .then(data => {
         setRuns(data.runs || []);
@@ -64,7 +64,7 @@ function HistoryPage() {
   const loadDetail = async (run: BatchRun) => {
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/history/batch/${run.id}/items`);
+      const res = await fetch(`/api/history/batch/${run.id}/items`, { credentials: "include" });
       const data = await res.json();
       setSelected(data);
     } catch {}

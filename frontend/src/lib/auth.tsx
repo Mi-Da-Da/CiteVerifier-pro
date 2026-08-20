@@ -1,54 +1,53 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
+import { apiClient } from "@/lib/api-client";
 
 type AuthCtx = {
-  email: string | null;
+  username: string | null;
   ready: boolean;
   isLoggedIn: boolean;
-  login: (email: string) => void;
-  logout: () => void;
+  login: (username: string) => void;
+  logout: () => Promise<void>;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
-const KEY = "ghostcite.auth.email";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [email, setEmail] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
+  // 启动时调 /api/user/me 确认登录态（依赖 cookie，不再读 localStorage）
   useEffect(() => {
+    let active = true;
+    apiClient.getMe()
+      .then((data) => {
+        if (active && data.success && data.username) {
+          setUsername(data.username);
+        }
+      })
+      .catch(() => {
+        // 401 = 未登录，静默处理
+      })
+      .finally(() => {
+        if (active) setReady(true);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const login = useCallback((name: string) => {
+    setUsername(name);
+  }, []);
+
+  const logout = useCallback(async () => {
     try {
-      const v = localStorage.getItem(KEY);
-      if (v) setEmail(v);
+      await apiClient.logout();
     } catch {
-      // localStorage may be unavailable during SSR or in strict privacy modes.
-    } finally {
-      setReady(true);
+      // 即使后端调用失败也清除前端状态
     }
-  }, []);
-
-  useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === KEY) {
-        setEmail(event.newValue);
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  const login = useCallback((e: string) => {
-    const value = e.trim();
-    setEmail(value);
-    try { localStorage.setItem(KEY, value); } catch {}
-  }, []);
-
-  const logout = useCallback(() => {
-    setEmail(null);
-    try { localStorage.removeItem(KEY); } catch {}
+    setUsername(null);
   }, []);
 
   return (
-    <Ctx.Provider value={{ email, ready, isLoggedIn: Boolean(email), login, logout }}>
+    <Ctx.Provider value={{ username, ready, isLoggedIn: Boolean(username), login, logout }}>
       {children}
     </Ctx.Provider>
   );

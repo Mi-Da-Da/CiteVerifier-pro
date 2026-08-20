@@ -57,6 +57,7 @@ class RuntimeStore:
                     """
                     CREATE TABLE IF NOT EXISTS batch_runs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER,
                         total_input INTEGER NOT NULL,
                         total_processed INTEGER NOT NULL DEFAULT 0,
                         found_count INTEGER NOT NULL DEFAULT 0,
@@ -69,6 +70,10 @@ class RuntimeStore:
                     )
                     """
                 )
+                # 兼容已有表：若 user_id 列不存在则添加
+                cols = {r["name"] for r in conn.execute("PRAGMA table_info(batch_runs)")}
+                if "user_id" not in cols:
+                    conn.execute("ALTER TABLE batch_runs ADD COLUMN user_id INTEGER")
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS batch_items (
@@ -129,17 +134,17 @@ class RuntimeStore:
         finally:
             conn.close()
 
-    def start_batch_run(self, total_input: int, max_candidates: int) -> int:
+    def start_batch_run(self, total_input: int, max_candidates: int, user_id: int | None = None) -> int:
         self._ensure_initialized()
         conn = self._connect()
         try:
             cur = conn.cursor()
             cur.execute(
                 """
-                INSERT INTO batch_runs (total_input, max_candidates, status, created_at, updated_at)
-                VALUES (?, ?, 'running', datetime('now'), datetime('now'))
+                INSERT INTO batch_runs (user_id, total_input, max_candidates, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'running', datetime('now'), datetime('now'))
                 """,
-                (total_input, max_candidates),
+                (user_id, total_input, max_candidates),
             )
             run_id = int(cur.lastrowid)
             conn.commit()

@@ -82,6 +82,12 @@ export interface LoginResponse extends ApiResponse {
   username?: string;
 }
 
+export interface MeResponse {
+  success: boolean;
+  user_id?: number;
+  username?: string;
+}
+
 export interface RegisterResponse extends ApiResponse {
 }
 
@@ -103,6 +109,7 @@ class ApiClient {
   ): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
     const response = await fetch(url, {
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         ...options.headers,
@@ -124,10 +131,22 @@ class ApiClient {
     });
   }
 
-  async login(data: LoginRequest): Promise<ApiResponse> {
-    return this.request<ApiResponse>("/user/login", {
+  async login(data: LoginRequest): Promise<LoginResponse> {
+    return this.request<LoginResponse>("/user/login", {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async logout(): Promise<ApiResponse> {
+    return this.request<ApiResponse>("/user/logout", {
+      method: "POST",
+    });
+  }
+
+  async getMe(): Promise<MeResponse> {
+    return this.request<MeResponse>("/user/me", {
+      method: "GET",
     });
   }
 
@@ -158,6 +177,7 @@ class ApiClient {
     const response = await fetch(`${API_BASE}/parse/pdf`, {
       method: "POST",
       body: formData,
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -179,6 +199,7 @@ class ApiClient {
     const response = await fetch(`${API_BASE}/search/pdf/batch`, {
       method: "POST",
       body: formData,
+      credentials: "include",
     });
 
     if (!response.ok) {

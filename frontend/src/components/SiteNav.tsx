@@ -11,7 +11,7 @@ export function SiteNav() {
   const searchRef = useRef<HTMLDivElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   const t = useT();
-  const { email, logout } = useAuth();
+  const { username, logout } = useAuth();
 
   useEffect(() => {
     if (!searchOpen) return;
@@ -107,11 +107,11 @@ export function SiteNav() {
 
         {/* 桌面端右侧按钮 */}
         <div dir="ltr" className="absolute right-4 sm:right-6 md:right-12 top-1/2 -translate-y-1/2 flex items-center gap-2 h-9">
-          {email ? (
+          {username ? (
             <div ref={accountRef} className="relative hidden sm:block">
               <button onClick={() => setAccountOpen(o => !o)} className={pillCls} aria-label="Account">
                 <User size={13} />
-                <span className="max-w-[180px] truncate">{email}</span>
+                <span className="max-w-[180px] truncate">{username}</span>
                 <ChevronDown size={12} className={`transition-transform ${accountOpen ? "rotate-180" : ""}`} />
               </button>
               <div
@@ -119,7 +119,7 @@ export function SiteNav() {
                   accountOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none"
                 }`}
               >
-                <div className="px-3 py-2 text-[11px] text-gray-400 truncate border-b border-white/10 mb-1">{email}</div>
+                <div className="px-3 py-2 text-[11px] text-gray-400 truncate border-b border-white/10 mb-1">{username}</div>
                 <Link
                   to="/history"
                   onClick={() => setAccountOpen(false)}
@@ -177,12 +177,12 @@ export function SiteNav() {
           <Link to="/more" onClick={() => setOpen(false)} className="py-3 px-3 rounded-lg hover:bg-gray-800/50 transition-all">
             {moreLabel}
           </Link>
-          {email ? (
+          {username ? (
             <button
               onClick={() => { logout(); setOpen(false); }}
               className="sm:hidden mt-2 pt-4 border-t border-gray-800 py-3 px-3 rounded-lg hover:bg-gray-800/50 flex items-center gap-2 text-left"
             >
-              <LogOut size={16} /> <span className="truncate">{email}</span>
+              <LogOut size={16} /> <span className="truncate">{username}</span>
             </button>
           ) : (
             <Link

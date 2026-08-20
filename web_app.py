@@ -28,11 +28,13 @@ if load_dotenv is not None:
 logger = logging.getLogger(__name__)
 
 from user_database import init_user_db, register_user, login_user
-from fastapi import FastAPI, HTTPException, File, Form, UploadFile
+from fastapi import FastAPI, HTTPException, File, Form, UploadFile, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from parser.llm_parser import llm_parse_pdf
+
+import session_manager
 
 from dblp_match import (
     _db_has_word_index,
@@ -216,7 +218,16 @@ def _is_chinese_title(title: str) -> bool:
     return bool(_CJK_PATTERN.search(title))
 
 
-def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields: dict[str, dict[str, Any]] | None = None, lang: str = "en") -> dict[str, Any]:
+def _require_user(request: Request) -> dict[str, Any]:
+    """从请求 cookie 解析当前登录用户，未登录抛 401。"""
+    token = request.cookies.get(session_manager.COOKIE_NAME)
+    user = session_manager.verify_session(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
+    return user
+
+
+def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields: dict[str, dict[str, Any]] | None = None, lang: str = "en", user_id: int | None = None) -> dict[str, Any]:
     """统一的批量标题检索逻辑，供纯标题、CSV、PDF 批量接口复用。
     逐条按标题是否含中文字符分流：含中文走百度学术，不含中文走 DBLP。
     lang 参数仅用于决定 _set_progress 展示的初始文案，不再整体控制检索路径。
@@ -233,6 +244,7 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
     run_id = runtime_store.start_batch_run(
         total_input=len(titles),
         max_candidates=max_candidates,
+        user_id=user_id,
     )
 
     started_at = time.perf_counter()
@@ -638,12 +650,48 @@ def api_register(payload: RegisterRequest) -> dict:
 
 
 @app.post("/api/user/login")
-def api_login(payload: LoginRequest) -> dict:
-    return login_user(payload.username, payload.password)
+def api_login(payload: LoginRequest, request: Request, response: Response) -> dict:
+    result = login_user(payload.username, payload.password)
+    if result.get("success") and result.get("user_id"):
+        # 创建 session 并下发签名 cookie
+        token = session_manager.create_session(result["user_id"], result["username"])
+        # Secure 标志：环境变量 COOKIE_SECURE=true 强制开启（反代场景），
+        # 否则按请求 scheme 自动判断（https 时开启，http 本地开发不开启）
+        secure = os.getenv("COOKIE_SECURE", "").lower() == "true" or request.url.scheme == "https"
+        response.set_cookie(
+            key=session_manager.COOKIE_NAME,
+            value=token,
+            max_age=session_manager.COOKIE_MAX_AGE,
+            httponly=True,
+            samesite="lax",
+            path="/",
+            secure=secure,
+        )
+    return result
+
+
+@app.post("/api/user/logout")
+def api_logout(request: Request, response: Response) -> dict:
+    """登出：清除服务端 session 与浏览器 cookie。"""
+    token = request.cookies.get(session_manager.COOKIE_NAME)
+    session_manager.delete_session(token)
+    response.delete_cookie(key=session_manager.COOKIE_NAME, path="/")
+    return {"success": True, "message": "已退出登录"}
+
+
+@app.get("/api/user/me")
+def api_user_me(request: Request) -> dict:
+    """返回当前登录用户信息，前端用于判断登录态。"""
+    token = request.cookies.get(session_manager.COOKIE_NAME)
+    user = session_manager.verify_session(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="未登录")
+    return {"success": True, "user_id": user["user_id"], "username": user["username"]}
 
 
 @app.post("/api/search/title")
-async def api_search_title(payload: TitleSearchRequest) -> dict[str, Any]:
+async def api_search_title(payload: TitleSearchRequest, request: Request) -> dict[str, Any]:
+    _require_user(request)
     title = _normalize_title(payload.title)
     if not title:
         raise HTTPException(status_code=400, detail="Title is required.")
@@ -769,26 +817,30 @@ async def api_search_title(payload: TitleSearchRequest) -> dict[str, Any]:
 
 
 @app.post("/api/search/title/batch")
-def api_search_title_batch(payload: BatchTitleSearchRequest) -> dict[str, Any]:
+def api_search_title_batch(payload: BatchTitleSearchRequest, request: Request) -> dict[str, Any]:
+    user = _require_user(request)
     titles = _normalize_title_list(payload.titles)
-    return _run_batch_search(titles, payload.max_candidates, lang=payload.lang)
+    return _run_batch_search(titles, payload.max_candidates, lang=payload.lang, user_id=user["user_id"])
 
 
 @app.post("/api/search/csv/batch")
 def api_search_csv_batch(
+    request: Request,
     file: UploadFile = File(...),
     max_candidates: int = Form(default=100000, ge=1, le=500000),
 ) -> dict[str, Any]:
     """上传 CSV，读取标题列并批量检索。前端发送字段名 file。
     中文标题自动走百度学术，英文标题自动走 DBLP（见 _run_batch_search）。
     """
+    user = _require_user(request)
     titles = _titles_from_csv_upload(file)
-    return _run_batch_search(titles, max_candidates)
+    return _run_batch_search(titles, max_candidates, user_id=user["user_id"])
 
 
 @app.post("/api/parse/pdf")
-def api_parse_pdf(files: list[UploadFile] = File(...)):
+def api_parse_pdf(request: Request, files: list[UploadFile] = File(...)):
     """解析 PDF 提取参考文献（不做 DBLP 检索）。前端发送字段名 files。"""
+    _require_user(request)
     results: list[dict] = []
     temp_dir = Path("temp")
     temp_dir.mkdir(exist_ok=True)
@@ -813,8 +865,9 @@ def api_parse_pdf(files: list[UploadFile] = File(...)):
 
 
 @app.post("/api/search/pdf/batch")
-def api_search_pdf_batch(files: list[UploadFile] = File(...), lang: str = Form(default="en")):
+def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), lang: str = Form(default="en")):
     """上传一个或多个 PDF，解析参考文献并批量检索。前端发送字段名 files。lang=zh 走百度学术，否则走 DBLP。"""
+    user = _require_user(request)
     temp_dir = Path("temp")
     temp_dir.mkdir(exist_ok=True)
 
@@ -863,7 +916,7 @@ def api_search_pdf_batch(files: list[UploadFile] = File(...), lang: str = Form(d
             "references": all_references,
         }
 
-    result = _run_batch_search(titles, max_candidates=100000, extra_item_fields=source_map, lang=lang)
+    result = _run_batch_search(titles, max_candidates=100000, extra_item_fields=source_map, lang=lang, user_id=user["user_id"])
     result["summary"]["file_count"] = len(files)
     result["references"] = all_references
     return result
@@ -872,8 +925,9 @@ def api_search_pdf_batch(files: list[UploadFile] = File(...), lang: str = Form(d
 # ── 历史记录 ────────────────────────────────────────────────
 
 @app.get("/api/history/batch")
-def api_history_batch(limit: int = 20, offset: int = 0) -> dict[str, Any]:
-    """返回最近的批量检索历史列表。"""
+def api_history_batch(request: Request, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+    """返回当前用户最近的批量检索历史列表。"""
+    user = _require_user(request)
     conn = runtime_store._connect()
     try:
         rows = conn.execute(
@@ -881,12 +935,15 @@ def api_history_batch(limit: int = 20, offset: int = 0) -> dict[str, Any]:
             SELECT id, total_input, total_processed, found_count,
                    max_candidates, duration_ms, status, error_message, created_at
             FROM batch_runs
+            WHERE user_id = ?
             ORDER BY id DESC
             LIMIT ? OFFSET ?
             """,
-            (limit, offset),
+            (user["user_id"], limit, offset),
         ).fetchall()
-        total_row = conn.execute("SELECT COUNT(1) AS c FROM batch_runs").fetchone()
+        total_row = conn.execute(
+            "SELECT COUNT(1) AS c FROM batch_runs WHERE user_id = ?", (user["user_id"],)
+        ).fetchone()
         total = int(total_row["c"]) if total_row else 0
         items = [dict(r) for r in rows]
         return {"total": total, "offset": offset, "limit": limit, "runs": items}
@@ -895,15 +952,17 @@ def api_history_batch(limit: int = 20, offset: int = 0) -> dict[str, Any]:
 
 
 @app.get("/api/history/batch/{run_id}/items")
-def api_history_batch_items(run_id: int) -> dict[str, Any]:
-    """返回某次批量检索的所有结果条目。"""
+def api_history_batch_items(run_id: int, request: Request) -> dict[str, Any]:
+    """返回某次批量检索的所有结果条目（仅限当前用户自己的记录）。"""
+    user = _require_user(request)
     conn = runtime_store._connect()
     try:
         run_row = conn.execute(
-            "SELECT * FROM batch_runs WHERE id = ?", (run_id,)
+            "SELECT * FROM batch_runs WHERE id = ? AND user_id = ?",
+            (run_id, user["user_id"]),
         ).fetchone()
         if run_row is None:
-            raise HTTPException(status_code=404, detail="Run not found.")
+            raise HTTPException(status_code=404, detail="Run not found or no permission.")
         item_rows = conn.execute(
             """
             SELECT item_index, query_title, found, dblp_title,
@@ -922,15 +981,17 @@ def api_history_batch_items(run_id: int) -> dict[str, Any]:
 
 
 @app.get("/api/history/batch/{run_id}/csv")
-def api_history_batch_csv(run_id: int):
-    """下载某次批量检索结果的 CSV 文件。"""
+def api_history_batch_csv(run_id: int, request: Request):
+    """下载某次批量检索结果的 CSV 文件（仅限当前用户自己的记录）。"""
+    user = _require_user(request)
     conn = runtime_store._connect()
     try:
         run_row = conn.execute(
-            "SELECT id FROM batch_runs WHERE id = ?", (run_id,)
+            "SELECT id FROM batch_runs WHERE id = ? AND user_id = ?",
+            (run_id, user["user_id"]),
         ).fetchone()
         if run_row is None:
-            raise HTTPException(status_code=404, detail="Run not found.")
+            raise HTTPException(status_code=404, detail="Run not found or no permission.")
         item_rows = conn.execute(
             """
             SELECT item_index, query_title, found, dblp_title,
@@ -1004,23 +1065,25 @@ async def _search_baidu_one(req: BaiduSearchRequest, idx: int = 1) -> dict[str, 
 
 
 @app.post("/api/search/baidu")
-async def api_search_baidu(req: BaiduSearchRequest) -> dict[str, Any]:
+async def api_search_baidu(req: BaiduSearchRequest, request: Request) -> dict[str, Any]:
     """
     百度学术单条检索。
     优先查百度学术，失败时（use_fallback=true）降级到百度搜索。
     需在环境变量中配置 SCRAPINGDOG_API_KEY（用于代理百度学术）。
     无 API Key 时将直接请求百度学术，部分 JS 渲染内容可能缺失。
     """
+    _require_user(request)
     runtime_store.increment_counter("baidu_search_requests")
     return await _search_baidu_one(req)
 
 
 @app.post("/api/search/baidu/batch")
-async def api_search_baidu_batch(req: BaiduBatchSearchRequest) -> dict[str, Any]:
+async def api_search_baidu_batch(req: BaiduBatchSearchRequest, request: Request) -> dict[str, Any]:
     """
     百度学术批量检索（最多 50 条）。
     一次性传给 Selenium 多浏览器并行处理，效率更高。
     """
+    _require_user(request)
     if len(req.items) > 50:
         raise HTTPException(status_code=400, detail="批量检索上限为 50 条。")
 

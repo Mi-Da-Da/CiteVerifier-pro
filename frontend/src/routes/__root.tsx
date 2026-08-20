@@ -23,7 +23,7 @@ function isProtectedPath(pathname: string) {
 }
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { email, ready } = useAuth();
+  const { username, ready } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const isAuthPage = AUTH_PATHS.includes(pathname);
@@ -32,15 +32,15 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!ready) return;
 
-    if (!email && protectedPage) {
+    if (!username && protectedPage) {
       navigate({ to: "/login", replace: true });
       return;
     }
 
-    if (email && isAuthPage) {
+    if (username && isAuthPage) {
       navigate({ to: "/", replace: true });
     }
-  }, [email, ready, protectedPage, isAuthPage, navigate]);
+  }, [username, ready, protectedPage, isAuthPage, navigate]);
 
   if (!ready) {
     return (
@@ -50,8 +50,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!email && protectedPage) return null;
-  if (email && isAuthPage) return null;
+  if (!username && protectedPage) return null;
+  if (username && isAuthPage) return null;
 
   return <>{children}</>;
 }

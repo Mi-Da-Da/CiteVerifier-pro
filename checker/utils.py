@@ -562,19 +562,6 @@ class ValidationUtils:
         
         clean_doi = DataUtils.clean_doi(doi)
         return clean_doi is not None
-    
-    @staticmethod
-    def calculate_confidence_level(similarity_score: float) -> str:
-        """Calculate confidence level based on similarity score"""
-        if similarity_score >= 0.9:
-            return "high"
-        elif similarity_score >= 0.7:
-            return "medium"
-        elif similarity_score >= 0.5:
-            return "low"
-        else:
-            return "very_low"
-
 
 class PerformanceUtils:
     """Performance monitoring utility class"""

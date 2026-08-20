@@ -37,7 +37,7 @@ function LoginPage() {
     try {
       const data = await apiClient.login({ username: username.trim(), password });
       if (data.success) {
-        login(username.trim());
+        login(data.username || username.trim());
         navigate({ to: "/" });
       } else {
         setErr(data.message || t({ zh: "用户名或密码错误。", en: "Incorrect username or password." }));
