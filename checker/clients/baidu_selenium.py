@@ -24,7 +24,6 @@ def _get_free_port():
 def create_driver(headless=False, driver_path=None):
     """创建浏览器实例"""
     chrome_options = Options()
-    chrome_options.add_argument('--incognito')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--disable-gpu')
@@ -390,38 +389,3 @@ def batch_validate_parallel(titles_list, headless=False, exact_match=False,
     print(f"📈 存在: {exist_count} 条")
 
     return df
-
-
-# def main():
-#     titles_to_check = [
-#         "《联合国国际货物销售合同公约》在中国法院适用问题的研究",
-#         "《联合国国际货物销售合同公约》在我国的适用路径——以中化新加坡公司诉德国克虏伯公司案为例",
-#         "国际民商事条约自治解释与国家主义解释的反思与重构",
-#         "紧急避险限度的利益衡量问题研究",
-#         "于欢案的刑法分析",
-#         "女王诉杜德利和斯蒂芬斯案",
-#         "自然法学:理性主义的历史演进",
-#         "从专利申请的角度看中医药专利保护困局"
-#     ]
-
-#     try:
-#         results_df = batch_validate_parallel(
-#             titles_list=titles_to_check,
-#             headless=True,  # 生产环境建议改成 True
-#             exact_match=False,
-#             similarity_threshold=0.7,
-#             max_workers=4
-#         )
-
-#         if not results_df.empty:
-#             results_df.to_csv('validation_results.csv', index=False, encoding='utf-8-sig')
-#             print(f"\n💾 结果已保存到 validation_results.csv")
-#             print(f"\n📋 详细结果:")
-#             print(results_df[['搜索标题', '是否存在', '置信度', '作者', '耗时', '浏览器ID']].to_string())
-
-#     except Exception as e:
-#         print(f"❌ 程序出错: {e}")
-
-
-# if __name__ == "__main__":
-#     main()

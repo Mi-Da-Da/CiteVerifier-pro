@@ -65,12 +65,17 @@ function BatchSearchPage() {
   const [summary, setSummary] = useState<BatchSummary | null>(null);
   const [items, setItems] = useState<BatchResultItem[]>([]);
 
+  // 用户显式选择的语言（null 表示自动检测）
+  const [manualLang, setManualLang] = useState<"zh" | "en" | null>(null);
+
   // 自动检测语言：优先从结果推断，其次从输入文本推断
   const detectLang = (text: string): "zh" | "en" =>
     /[\u4e00-\u9fff]/.test(text) ? "zh" : "en";
-  const lang = items.length > 0
+  const autoLang = items.length > 0
     ? detectLang(items.map(i => i.query_title).join(" "))
     : detectLang(titlesValue);
+  // 优先使用用户手动选择的语言，其次使用自动检测
+  const lang: "zh" | "en" = manualLang ?? autoLang;
   const sourceName = lang === "zh" ? "百度学术" : "DBLP";
   const sourceNameEn = lang === "zh" ? "Baidu Scholar" : "DBLP";
 
@@ -291,9 +296,35 @@ function BatchSearchPage() {
             {t({ zh: "粘贴标题列表，或上传 PDF 自动提取参考文献。", en: "Paste a list of titles, or upload a PDF to extract references automatically." })}
           </p>
 
+          {/* 中英文切换按钮 */}
+          <div className="text-center">
+            <div
+              className="animate-blur-fade-up liquid-glass rounded-full p-1 inline-flex gap-1 mb-8"
+              style={{ animationDelay: "150ms" }}
+              role="tablist"
+            >
+              {([
+                { key: "zh", label: t({ zh: "中文文献", en: "Chinese Literature" }) },
+                { key: "en", label: t({ zh: "英文文献", en: "English Literature" }) },
+              ] as { key: "zh" | "en"; label: string }[]).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setManualLang(opt.key === manualLang ? null : opt.key)}
+                  className={`px-5 py-2 rounded-full text-sm transition-colors ${
+                    (manualLang === null ? autoLang : manualLang) === opt.key
+                      ? "bg-white text-black"
+                      : "text-gray-300 hover:text-white hover:bg-white/10"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div
             className="animate-blur-fade-up liquid-glass rounded-3xl p-5 md:p-8"
-            style={{ animationDelay: "200ms" }}
+            style={{ animationDelay: "250ms" }}
           >
             {/* Tab 切换 */}
             <div className="flex gap-1 border-b border-white/10 mb-5">

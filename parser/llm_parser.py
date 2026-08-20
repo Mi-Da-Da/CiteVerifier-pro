@@ -3,6 +3,7 @@ import json
 import os
 import re
 import asyncio
+from pathlib import Path
 from weakref import ref
 import aiohttp
 
@@ -11,10 +12,17 @@ from parser.utils.pdf_reader import pdf_to_text
 
 MAX_RETRY_TIMES = 3
 
-# LLM API key should be set via environment variable
+# 尽早加载项目根目录 .env（被 web_app 以外的脚本直接 import 时也能读到配置）
+try:
+    from dotenv import load_dotenv as _load_dotenv
+except ImportError:  # pragma: no cover
+    _load_dotenv = None  # type: ignore[assignment]
+_LLM_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if _load_dotenv is not None:
+    _load_dotenv(_LLM_PROJECT_ROOT / ".env")
+
+# LLM API key should be set via environment variable or .env file
 # export DASHSCOPE_API_KEY='your_api_key_here'
-if 'DASHSCOPE_API_KEY' not in os.environ:
-    os.environ['DASHSCOPE_API_KEY'] = ''
 
 
 def _fallback_title(raw_str: str) -> str:

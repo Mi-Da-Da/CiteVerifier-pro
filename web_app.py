@@ -15,6 +15,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+# 尽早加载 .env（必须在 import 任何子模块之前，确保 os.environ 已填充）
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - 未安装 dotenv 时静默跳过
+    load_dotenv = None  # type: ignore[assignment]
+
+_PROJECT_ROOT = Path(__file__).resolve().parent
+if load_dotenv is not None:
+    load_dotenv(_PROJECT_ROOT / ".env")
+
 logger = logging.getLogger(__name__)
 
 from user_database import init_user_db, register_user, login_user

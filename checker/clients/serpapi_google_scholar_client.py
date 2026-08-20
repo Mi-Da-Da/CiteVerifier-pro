@@ -27,12 +27,19 @@ from checker.utils import StringUtils
 
 logger = logging.getLogger(__name__)
 
+# 尽早加载项目根目录 .env（被单独 import 时也能读到配置）
+try:
+    from dotenv import load_dotenv as _load_dotenv
+except ImportError:  # pragma: no cover
+    _load_dotenv = None  # type: ignore[assignment]
+_GS_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if _load_dotenv is not None:
+    _load_dotenv(_GS_PROJECT_ROOT / ".env")
+
 # ── 基本配置 ───────────────────────────────────────────────────
 _CACHE_TTL = 86400  # 缓存 24 小时
 _CACHE_DB_PATH = Path(__file__).parent.parent.parent / "data" / "google_scholar_cache.db"
 _SERPAPI_API_KEY_ENV = "SERPAPI_API_KEY"
-# 默认 key（可直接使用，也允许用环境变量 SERPAPI_API_KEY 覆盖）
-_DEFAULT_SERPAPI_API_KEY = ""
 # 标题相似度达到此阈值即视为命中
 _SIMILARITY_THRESHOLD = 0.7
 # 批量检索的线程并发上限（避免触发 SerpApi 限速）
@@ -195,8 +202,8 @@ def _set_cached_result(title: str, result: Dict) -> None:
 
 
 def _get_api_key() -> str:
-    # 优先环境变量，回退到内置默认 key
-    return os.getenv(_SERPAPI_API_KEY_ENV, _DEFAULT_SERPAPI_API_KEY)
+    # 只从环境变量读取，未配置即返回空字符串
+    return os.getenv(_SERPAPI_API_KEY_ENV) or ""
 
 
 def is_available() -> bool:
