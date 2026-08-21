@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Clock, ChevronRight, Download, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
+import { Clock, ChevronRight, Download, CheckCircle2, AlertTriangle, XCircle, HelpCircle } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
@@ -27,6 +27,19 @@ interface BatchRun {
   created_at: string;
 }
 
+interface SingleSearchEvent {
+  id: number;
+  query_title: string;
+  found: number;
+  max_candidates: number;
+  duration_ms: number | null;
+  error_message: string | null;
+  created_at: string;
+  verification_status: VerificationStatus;
+}
+
+type VerificationStatus = "verified" | "suspicious" | "unverifiable" | "search_error";
+
 interface RunDetail {
   run: BatchRun;
   items: Array<{
@@ -38,6 +51,7 @@ interface RunDetail {
     year: string | null;
     venue: string | null;
     duration_ms: number;
+    verification_status: VerificationStatus;
   }>;
 }
 
@@ -45,17 +59,23 @@ function HistoryPage() {
   const t = useT();
   const [runs, setRuns] = useState<BatchRun[]>([]);
   const [total, setTotal] = useState(0);
+  const [singleEvents, setSingleEvents] = useState<SingleSearchEvent[]>([]);
+  const [singleTotal, setSingleTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<RunDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/history/batch?limit=20&offset=0", { credentials: "include" })
-      .then(r => r.json())
-      .then(data => {
-        setRuns(data.runs || []);
-        setTotal(data.total || 0);
+    Promise.all([
+      fetch("/api/history/batch?limit=20&offset=0", { credentials: "include" }).then(r => r.json()),
+      fetch("/api/history/single?limit=20&offset=0", { credentials: "include" }).then(r => r.json()),
+    ])
+      .then(([batchData, singleData]) => {
+        setRuns(batchData.runs || []);
+        setTotal(batchData.total || 0);
+        setSingleEvents(singleData.events || []);
+        setSingleTotal(singleData.total || 0);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -79,6 +99,13 @@ function HistoryPage() {
     : s === "running" ? <Clock size={14} className="text-amber-400" />
     : <XCircle size={14} className="text-rose-400" />;
 
+  const verificationMeta = (status: VerificationStatus) => ({
+    verified: { label: t({ zh: "真实引用", en: "Verified" }), color: "text-emerald-400", Icon: CheckCircle2 },
+    suspicious: { label: t({ zh: "疑似异常", en: "Suspicious" }), color: "text-amber-300", Icon: AlertTriangle },
+    unverifiable: { label: t({ zh: "无法验证", en: "Unverifiable" }), color: "text-gray-400", Icon: HelpCircle },
+    search_error: { label: t({ zh: "检索异常", en: "Search error" }), color: "text-rose-400", Icon: XCircle },
+  })[status];
+
   return (
     <div className="relative min-h-screen w-full bg-black text-white">
       <SiteBackdrop />
@@ -92,19 +119,62 @@ function HistoryPage() {
                 {t({ zh: "历史记录", en: "History" })}
               </h1>
               <p className="text-sm text-gray-400">
-                {t({ zh: `共 ${total} 次批量检索记录`, en: `${total} batch search runs` })}
+                {t({ zh: `${singleTotal} 次单条检测，${total} 次批量检测`, en: `${singleTotal} single searches and ${total} batch runs` })}
               </p>
             </div>
           </div>
 
           {loading ? (
             <div className="text-center text-gray-400 py-20">{t({ zh: "加载中…", en: "Loading…" })}</div>
-          ) : runs.length === 0 ? (
+          ) : runs.length === 0 && singleEvents.length === 0 ? (
             <div className="liquid-glass rounded-3xl p-12 text-center text-gray-400">
               <Clock size={32} className="mx-auto mb-4 opacity-40" />
-              <p>{t({ zh: "暂无历史记录。先去做一次批量检索吧。", en: "No history yet. Try a batch search first." })}</p>
+              <p>{t({ zh: "暂无检测历史。", en: "No search history yet." })}</p>
             </div>
           ) : (
+            <div className="space-y-10">
+              <div>
+                <h2 className="text-xl font-medium mb-4">
+                  {t({ zh: "单条检测历史", en: "Single search history" })}
+                </h2>
+                {singleEvents.length === 0 ? (
+                  <div className="liquid-glass rounded-2xl p-6 text-sm text-gray-400">
+                    {t({ zh: "暂无单条检测记录。", en: "No single-search records yet." })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {singleEvents.map(event => {
+                      const meta = verificationMeta(event.verification_status);
+                      const Icon = meta.Icon;
+                      return (
+                      <div key={event.id} className="liquid-glass rounded-2xl p-4">
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="text-sm text-gray-100 break-words">{event.query_title}</div>
+                          <Icon size={15} className={`shrink-0 ${meta.color}`} />
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
+                          <span className={meta.color}>{meta.label}</span>
+                          <span>·</span>
+                          <span>{fmtDuration(event.duration_ms ?? 0)}</span>
+                          <span>·</span>
+                          <span>{fmtDate(event.created_at)}</span>
+                        </div>
+                      </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h2 className="text-xl font-medium mb-4">
+                  {t({ zh: "批量检测历史", en: "Batch search history" })}
+                </h2>
+                {runs.length === 0 ? (
+                  <div className="liquid-glass rounded-2xl p-6 text-sm text-gray-400">
+                    {t({ zh: "暂无批量检测记录。", en: "No batch-search records yet." })}
+                  </div>
+                ) : (
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
               {/* 列表 */}
               <div className="lg:col-span-2 space-y-3">
@@ -149,11 +219,13 @@ function HistoryPage() {
                       </a>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-px bg-white/5">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-px bg-white/5">
                       {[
                         { label: t({ zh: "总计", en: "Total" }), value: selected.run.total_processed },
-                        { label: t({ zh: "已找到", en: "Found" }), value: selected.run.found_count, color: "text-emerald-300" },
-                        { label: t({ zh: "未找到", en: "Not found" }), value: selected.run.total_processed - selected.run.found_count, color: "text-rose-300" },
+                        { label: t({ zh: "真实引用", en: "Verified" }), value: selected.items.filter(item => item.verification_status === "verified").length, color: "text-emerald-300" },
+                        { label: t({ zh: "疑似异常", en: "Suspicious" }), value: selected.items.filter(item => item.verification_status === "suspicious").length, color: "text-amber-300" },
+                        { label: t({ zh: "无法验证", en: "Unverifiable" }), value: selected.items.filter(item => item.verification_status === "unverifiable").length, color: "text-gray-300" },
+                        { label: t({ zh: "检索异常", en: "Errors" }), value: selected.items.filter(item => item.verification_status === "search_error").length, color: "text-rose-300" },
                       ].map(c => (
                         <div key={c.label} className="bg-black/40 p-4 text-center">
                           <div className={`text-xl font-medium tabular-nums ${c.color ?? ""}`}>{c.value}</div>
@@ -176,6 +248,8 @@ function HistoryPage() {
                           {selected.items.map(item => {
                             const simPct = item.dblp_title_similarity != null ? Math.round(item.dblp_title_similarity * 100) : null;
                             const simColor = simPct == null ? "text-gray-400" : simPct >= 80 ? "text-emerald-300" : simPct >= 50 ? "text-amber-300" : "text-rose-300";
+                            const meta = verificationMeta(item.verification_status);
+                            const Icon = meta.Icon;
                             return (
                               <tr key={item.item_index} className="border-b border-white/5 last:border-0 hover:bg-white/3">
                                 <td className="px-4 py-2.5 text-gray-500 tabular-nums text-xs">{item.item_index}</td>
@@ -186,10 +260,8 @@ function HistoryPage() {
                                 <td className={`px-4 py-2.5 text-right tabular-nums text-xs ${simColor}`}>
                                   {simPct != null ? `${simPct}%` : "—"}
                                 </td>
-                                <td className="px-4 py-2.5 text-right">
-                                  {item.found
-                                    ? <CheckCircle2 size={13} className="inline text-emerald-400" />
-                                    : <AlertTriangle size={13} className="inline text-rose-400" />}
+                                <td className={`px-4 py-2.5 text-right ${meta.color}`} title={meta.label}>
+                                  <Icon size={13} className="inline" />
                                 </td>
                               </tr>
                             );
@@ -203,6 +275,9 @@ function HistoryPage() {
                     <ChevronRight size={24} className="mx-auto mb-3 opacity-30" />
                     <p className="text-sm">{t({ zh: "点击左侧记录查看详情", en: "Select a run to see details" })}</p>
                   </div>
+                )}
+              </div>
+            </div>
                 )}
               </div>
             </div>

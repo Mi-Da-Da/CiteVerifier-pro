@@ -8,7 +8,7 @@ import { useT } from "@/lib/i18n";
 
 const searchSchema = z.object({
   title: z.string().default(""),
-  status: z.enum(["success", "fake", "unknown"]).default("unknown"),
+  status: z.enum(["verified", "suspicious", "unverifiable", "search_error"]).default("unverifiable"),
   matchedTitle: z.string().default(""),
   similarity: z.string().default(""),
   lang: z.enum(["zh", "en"]).default("en"),
@@ -48,26 +48,33 @@ function ResultPage() {
     : "text-rose-300";
 
   const META = {
-    success: {
+    verified: {
       icon: CheckCircle2,
       color: "text-emerald-300",
       chip: t({ zh: "已通过", en: "Verified" }),
       headline: t({ zh: "找到了。这篇论文真实存在。", en: "Found. This paper is real." }),
       desc: t({ zh: `在${sourceName}中检索到了可信记录。`, en: `A trustworthy record was found in ${sourceNameEn}.` }),
     },
-    fake: {
+    suspicious: {
       icon: AlertTriangle,
       color: "text-rose-300",
-      chip: t({ zh: "疑似虚假", en: "Likely fake" }),
-      headline: t({ zh: "未找到来源。这条引用可能不存在。", en: "No source found. This citation may not exist." }),
-      desc: t({ zh: `在${sourceName}中未检索到有效记录。`, en: `No valid record was found in ${sourceNameEn}.` }),
+      chip: t({ zh: "疑似异常", en: "Suspicious" }),
+      headline: t({ zh: "找到近似记录，但相似度不足，建议人工核查。", en: "A similar record was found, but its similarity is insufficient." }),
+      desc: t({ zh: `${sourceName}中存在候选文献，但尚不能确认为同一篇。`, en: `A candidate exists in ${sourceNameEn}, but it cannot be confirmed as the same paper.` }),
     },
-    unknown: {
+    unverifiable: {
       icon: HelpCircle,
-      color: "text-amber-300",
-      chip: t({ zh: "无法判断", en: "Inconclusive" }),
-      headline: t({ zh: "找到近似记录，但相似度偏低，建议人工核查。", en: "A similar record was found, but similarity is low. Manual verification recommended." }),
-      desc: t({ zh: `${sourceName}中存在相近标题，但无法确认是同一篇文献。`, en: `A similar title exists in ${sourceNameEn}, but it may not be the same paper.` }),
+      color: "text-gray-300",
+      chip: t({ zh: "无法验证", en: "Unverifiable" }),
+      headline: t({ zh: "没有找到可用于判断的候选文献。", en: "No candidate was found to support a determination." }),
+      desc: t({ zh: "当前证据不足，不能直接判定该引用为虚假。", en: "There is insufficient evidence to classify this citation as false." }),
+    },
+    search_error: {
+      icon: AlertTriangle,
+      color: "text-rose-400",
+      chip: t({ zh: "检索异常", en: "Search error" }),
+      headline: t({ zh: "检索过程未能正常完成。", en: "The search could not be completed." }),
+      desc: t({ zh: "数据库、网络或第三方服务发生异常，请稍后重试。", en: "A database, network, or third-party service error occurred. Please try again." }),
     },
   } as const;
 

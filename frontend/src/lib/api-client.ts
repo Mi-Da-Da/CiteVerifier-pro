@@ -19,6 +19,7 @@ export interface TitleSearchRequest {
 
 export interface SearchResult {
   found: boolean;
+  verification_status?: "verified" | "suspicious" | "unverifiable" | "search_error";
   query_title: string;
   dblp_id?: number;
   dblp_title?: string;

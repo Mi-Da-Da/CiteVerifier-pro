@@ -41,7 +41,13 @@ function Index() {
       setError(t({ zh: "请输入论文标题。", en: "Enter a paper title." }));
       return;
     }
-    navigate({ to: "/detect", search: { title: title.trim() } });
+    navigate({
+      to: "/detect",
+      search: {
+        title: title.trim(),
+        lang: /[\u4e00-\u9fff]/.test(title) ? "zh" : "en",
+      },
+    });
   };
 
   const bigHighlight = {

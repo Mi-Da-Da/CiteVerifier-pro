@@ -57,20 +57,31 @@ MAX_BATCH_TITLES = 1000
 
 APP_VERSION = "0.1.0"
 
-# ── 进度状态 ────────────────────────────────────────────────
-_progress: dict[str, Any] = {
+# ── 进度状态（按用户 + 任务隔离）────────────────────────────
+_IDLE_PROGRESS: dict[str, Any] = {
     "status": "idle",   # idle / parsing / searching / done / error
     "stage": "",
     "total": 0,
     "processed": 0,
     "found": 0,
 }
+_progress_by_task: dict[tuple[int, str], dict[str, Any]] = {}
 _progress_lock = threading.Lock()
 
 
-def _set_progress(**kwargs: Any) -> None:
+def _progress_task_id(request: Request) -> str:
+    """读取前端生成的任务标识；旧客户端未传时仍可使用默认任务。"""
+    task_id = request.headers.get("X-Progress-Task-ID", "default").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", task_id):
+        raise HTTPException(status_code=400, detail="Invalid progress task ID.")
+    return task_id
+
+
+def _set_progress(user_id: int, task_id: str, **kwargs: Any) -> None:
     with _progress_lock:
-        _progress.update(kwargs)
+        key = (user_id, task_id)
+        progress = _progress_by_task.setdefault(key, _IDLE_PROGRESS.copy())
+        progress.update(kwargs)
 
 
 _prewarm_tasks: set[asyncio.Task] = set()
@@ -212,10 +223,62 @@ def _titles_from_csv_upload(file: UploadFile) -> list[str]:
 
 
 _CJK_PATTERN = re.compile(r'[\u4e00-\u9fff]')
+VERIFIED_SIMILARITY_THRESHOLD = 0.9
+_NO_RESULT_ERROR_MARKERS = ("无结果", "未找到", "no result", "not found")
 
 
 def _is_chinese_title(title: str) -> bool:
     return bool(_CJK_PATTERN.search(title))
+
+
+def _with_verification_status(result: dict[str, Any]) -> dict[str, Any]:
+    """统一生成四类核验状态，同时保留 found 字段兼容旧客户端。"""
+    candidate = result.get("dblp_title") or result.get("matched_title")
+    similarity = result.get("dblp_title_similarity", result.get("similarity"))
+    try:
+        similarity_value = float(similarity) if similarity is not None else None
+    except (TypeError, ValueError):
+        similarity_value = None
+    error = result.get("error_message") or result.get("error")
+    normalized_error = str(error).casefold() if error else ""
+
+    if candidate:
+        status = (
+            "verified"
+            if similarity_value is not None
+            and similarity_value >= VERIFIED_SIMILARITY_THRESHOLD
+            else "suspicious"
+        )
+    elif error and not any(marker in normalized_error for marker in _NO_RESULT_ERROR_MARKERS):
+        status = "search_error"
+    else:
+        status = "unverifiable"
+
+    normalized = dict(result)
+    normalized["verification_status"] = status
+    normalized["found"] = status == "verified"
+    normalized["error_message"] = str(error) if status == "search_error" else None
+    if candidate and not normalized.get("dblp_title"):
+        normalized["dblp_title"] = candidate
+    if similarity_value is not None and normalized.get("dblp_title_similarity") is None:
+        normalized["dblp_title_similarity"] = similarity_value
+    return normalized
+
+
+def _prefer_verification_result(
+    current: dict[str, Any], candidate: dict[str, Any]
+) -> dict[str, Any]:
+    """优先有效匹配，其次保留相似度更高的候选，最后保留可诊断错误。"""
+    current = _with_verification_status(current)
+    candidate = _with_verification_status(candidate)
+    rank = {"verified": 3, "suspicious": 2, "unverifiable": 1, "search_error": 0}
+    current_rank = rank[current["verification_status"]]
+    candidate_rank = rank[candidate["verification_status"]]
+    if candidate_rank != current_rank:
+        return candidate if candidate_rank > current_rank else current
+    current_score = float(current.get("dblp_title_similarity") or 0)
+    candidate_score = float(candidate.get("dblp_title_similarity") or 0)
+    return candidate if candidate_score > current_score else current
 
 
 def _require_user(request: Request) -> dict[str, Any]:
@@ -227,7 +290,7 @@ def _require_user(request: Request) -> dict[str, Any]:
     return user
 
 
-def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields: dict[str, dict[str, Any]] | None = None, lang: str = "en", user_id: int | None = None) -> dict[str, Any]:
+def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields: dict[str, dict[str, Any]] | None = None, lang: str = "en", user_id: int | None = None, task_id: str = "default") -> dict[str, Any]:
     """统一的批量标题检索逻辑，供纯标题、CSV、PDF 批量接口复用。
     逐条按标题是否含中文字符分流：含中文走百度学术，不含中文走 DBLP。
     lang 参数仅用于决定 _set_progress 展示的初始文案，不再整体控制检索路径。
@@ -255,7 +318,10 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
     zh_titles = [t for t in titles if _is_chinese_title(t)]
     en_titles = [t for t in titles if not _is_chinese_title(t)]
 
+    progress_user_id = int(user_id or 0)
     _set_progress(
+        progress_user_id,
+        task_id,
         status="searching",
         stage="Searching Baidu Scholar / DBLP",
         total=len(titles),
@@ -269,28 +335,31 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
         raw_results = asyncio.run(batch_search_baidu(zh_titles))
         for r in raw_results:
             qt = r.get("query_title", "")
-            zh_result_map[qt] = {
+            zh_result_map[qt] = _with_verification_status({
                 "query_title": qt,
                 "found": bool(r.get("found")),
-                "dblp_title": r.get("matched_title") if r.get("found") else None,
-                "dblp_title_similarity": r.get("similarity") if r.get("found") else None,
+                "dblp_title": r.get("matched_title"),
+                "dblp_title_similarity": r.get("similarity"),
                 "dblp_id": None,
                 "year": None,
                 "venue": None,
                 "pub_type": None,
                 "source": r.get("source", "baidu"),
-            }
+                "error": r.get("error"),
+            })
 
     en_result_map: dict[str, dict[str, Any]] = {}
     if en_titles:
         db_path = _resolve_db_path()
         if not db_path.exists():
             raise HTTPException(status_code=404, detail="DBLP database not found.")
-        en_raw_results = _parallel_batch_search(db_path, en_titles, max_candidates)
+        en_raw_results = _parallel_batch_search(
+            db_path, en_titles, max_candidates, progress_user_id, task_id
+        )
         for r in en_raw_results:
             qt = r.get("query_title", "")
             r.setdefault("source", "dblp")
-            en_result_map[qt] = r
+            en_result_map[qt] = _with_verification_status(r)
 
         # 谷歌学术回退：DBLP 未命中的英文标题交给 SerpApi 谷歌学术
         try:
@@ -305,10 +374,12 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
         if google_scholar_is_available and google_scholar_is_available():
             not_found_en = [
                 t for t in en_titles
-                if not en_result_map.get(t, {}).get("found")
+                if en_result_map.get(t, {}).get("verification_status") != "verified"
             ]
             if not_found_en:
                 _set_progress(
+                    progress_user_id,
+                    task_id,
                     stage="Searching Google Scholar (DBLP fallback)",
                     total=len(titles),
                 )
@@ -328,12 +399,12 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
                     found = bool(gs.get("found"))
                     if found:
                         gs_found += 1
-                    en_result_map[qt] = {
+                    online_result = {
                         "query_title": qt,
                         "found": found,
                         "dblp_id": None,
-                        "dblp_title": gs.get("matched_title") if found else None,
-                        "dblp_title_similarity": gs.get("similarity") if found else None,
+                        "dblp_title": gs.get("matched_title"),
+                        "dblp_title_similarity": gs.get("similarity"),
                         "year": gs.get("year"),
                         "venue": gs.get("venue"),
                         "pub_type": None,
@@ -342,6 +413,9 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
                         "authors": gs.get("authors"),
                         "error": gs.get("error"),
                     }
+                    en_result_map[qt] = _prefer_verification_result(
+                        en_result_map.get(qt, {"query_title": qt}), online_result
+                    )
                 if gs_found:
                     runtime_store.increment_counter(
                         "google_scholar_fallback_found", delta=gs_found
@@ -360,10 +434,12 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
         if google_search_is_available and google_search_is_available():
             still_not_found = [
                 t for t in en_titles
-                if not en_result_map.get(t, {}).get("found")
+                if en_result_map.get(t, {}).get("verification_status") != "verified"
             ]
             if still_not_found:
                 _set_progress(
+                    progress_user_id,
+                    task_id,
                     stage="Searching Google (final fallback)",
                     total=len(titles),
                 )
@@ -383,12 +459,12 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
                     found = bool(gs.get("found"))
                     if found:
                         gsearch_found += 1
-                    en_result_map[qt] = {
+                    online_result = {
                         "query_title": qt,
                         "found": found,
                         "dblp_id": None,
-                        "dblp_title": gs.get("matched_title") if found else None,
-                        "dblp_title_similarity": gs.get("similarity") if found else None,
+                        "dblp_title": gs.get("matched_title"),
+                        "dblp_title_similarity": gs.get("similarity"),
                         "year": gs.get("year"),
                         "venue": gs.get("venue"),
                         "pub_type": None,
@@ -397,6 +473,9 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
                         "authors": gs.get("authors"),
                         "error": gs.get("error"),
                     }
+                    en_result_map[qt] = _prefer_verification_result(
+                        en_result_map.get(qt, {"query_title": qt}), online_result
+                    )
                 if gsearch_found:
                     runtime_store.increment_counter(
                         "google_search_fallback_found", delta=gsearch_found
@@ -406,16 +485,19 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
     batch_results = []
     for t in titles:
         if _is_chinese_title(t):
-            batch_results.append(zh_result_map.get(t, {"query_title": t, "found": False, "source": "baidu"}))
+            batch_results.append(_with_verification_status(zh_result_map.get(t, {"query_title": t, "found": False, "source": "baidu"})))
         else:
-            batch_results.append(en_result_map.get(t, {"query_title": t, "found": False, "source": "dblp"}))
+            batch_results.append(_with_verification_status(en_result_map.get(t, {"query_title": t, "found": False, "source": "dblp"})))
 
+    status_counts = {status: 0 for status in ("verified", "suspicious", "unverifiable", "search_error")}
     for idx, result in enumerate(batch_results, start=1):
         found = bool(result.get("found"))
+        verification_status = result["verification_status"]
+        status_counts[verification_status] += 1
         if found:
             found_count += 1
 
-        _set_progress(processed=idx, found=found_count)
+        _set_progress(progress_user_id, task_id, processed=idx, found=found_count)
 
         title_key = result.get("query_title", titles[idx - 1])
         runtime_store.record_batch_item(
@@ -430,7 +512,9 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
             venue=result.get("venue"),
             pub_type=result.get("pub_type"),
             duration_ms=0,
-            error_message=None,
+            error_message=result.get("error_message"),
+            verification_status=verification_status,
+            source=result.get("source"),
         )
 
         items.append({
@@ -438,7 +522,7 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
             **result,
             **extra_item_fields.get(title_key, {}),
             "duration_ms": 0,
-            "error_message": None,
+            "error_message": result.get("error_message"),
         })
 
     total_duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
@@ -453,7 +537,14 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
     runtime_store.increment_counter("batch_search_items_total", delta=len(items))
     runtime_store.increment_counter("batch_search_found_total", delta=found_count)
 
-    _set_progress(status="done", stage="Done", processed=len(items), found=found_count)
+    _set_progress(
+        progress_user_id,
+        task_id,
+        status="done",
+        stage="Done",
+        processed=len(items),
+        found=found_count,
+    )
 
     return {
         "summary": {
@@ -463,6 +554,10 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
             "total_processed": len(items),
             "found_count": found_count,
             "not_found_count": len(items) - found_count,
+            "verified_count": status_counts["verified"],
+            "suspicious_count": status_counts["suspicious"],
+            "unverifiable_count": status_counts["unverifiable"],
+            "error_count": status_counts["search_error"],
             "max_candidates": max_candidates,
             "duration_ms": total_duration_ms,
         },
@@ -523,27 +618,31 @@ def _search_title(db_path: Path, title: str, max_candidates: int) -> tuple[dict[
 def _single_search_result(db_path: Path, title: str, max_candidates: int) -> dict[str, Any]:
     match, _ = _search_title(db_path, title, max_candidates)
     if not match:
-        return {
+        return _with_verification_status({
             "found": False,
             "query_title": title,
-        }
+            "source": "dblp",
+        })
 
     pub_id = match.get("dblp_id")
     meta = _fetch_publication_meta(db_path, pub_id if isinstance(pub_id, int) else None)
-    return {
+    return _with_verification_status({
         "found": True,
         "query_title": title,
         "dblp_id": match.get("dblp_id"),
         "dblp_title": match.get("dblp_title"),
         "dblp_title_similarity": match.get("dblp_title_similarity"),
         **meta,
-    }
+        "source": "dblp",
+    })
 
 
 def _parallel_batch_search(
     db_path: Path,
     titles: list[str],
     max_candidates: int,
+    user_id: int,
+    task_id: str,
 ) -> list[dict[str, Any]]:
     """
     批量检索 DBLP，使用 ThreadPoolExecutor 并行搜索。
@@ -567,8 +666,13 @@ def _parallel_batch_search(
                 _sqlite_readonly_fast(c)
                 match = search_dblp_by_index(c, title, max_candidates=max_candidates)
                 c.close()
-            except Exception:
-                match = None
+            except Exception as exc:
+                return idx, _with_verification_status({
+                    "found": False,
+                    "query_title": title,
+                    "source": "dblp",
+                    "error": str(exc),
+                })
         else:
             cache_key = str(db_path)
             with _brute_cache_lock:
@@ -576,20 +680,29 @@ def _parallel_batch_search(
                 if all_titles_data is None:
                     all_titles_data = load_all_titles_from_db(db_path, quiet=True)
                     _brute_cache[cache_key] = all_titles_data
-            match = search_dblp_brute_force(all_titles_data, title)
+            try:
+                match = search_dblp_brute_force(all_titles_data, title)
+            except Exception as exc:
+                return idx, _with_verification_status({
+                    "found": False,
+                    "query_title": title,
+                    "source": "dblp",
+                    "error": str(exc),
+                })
 
         if not match:
-            return idx, {"found": False, "query_title": title}
+            return idx, _with_verification_status({"found": False, "query_title": title, "source": "dblp"})
         pub_id = match.get("dblp_id")
         meta = _fetch_publication_meta(db_path, pub_id if isinstance(pub_id, int) else None)
-        return idx, {
+        return idx, _with_verification_status({
             "found": True,
             "query_title": title,
             "dblp_id": match.get("dblp_id"),
             "dblp_title": match.get("dblp_title"),
             "dblp_title_similarity": match.get("dblp_title_similarity"),
             **meta,
-        }
+            "source": "dblp",
+        })
 
     workers = min(8, max(1, len(titles)))
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -601,7 +714,7 @@ def _parallel_batch_search(
                 processed_count += 1
                 if result.get("found"):
                     found_count += 1
-                _set_progress(processed=processed_count, found=found_count)
+                _set_progress(user_id, task_id, processed=processed_count, found=found_count)
 
     return results  # type: ignore[return-value]
 
@@ -609,7 +722,7 @@ def _parallel_batch_search(
 def _items_to_csv(items: list[dict[str, Any]]) -> str:
     """把 batch items 列表转成 CSV 字符串。"""
     output = io.StringIO()
-    fieldnames = ["index", "query_title", "found", "dblp_title", "dblp_title_similarity", "year", "venue", "pub_type", "duration_ms", "error_message"]
+    fieldnames = ["index", "query_title", "verification_status", "found", "dblp_title", "dblp_title_similarity", "source", "year", "venue", "pub_type", "duration_ms", "error_message"]
     writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore", lineterminator="\n")
     writer.writeheader()
     for item in items:
@@ -634,9 +747,12 @@ def api_health() -> dict[str, Any]:
 
 
 @app.get("/api/progress")
-def api_progress() -> dict[str, Any]:
+def api_progress(request: Request, task_id: str = "default") -> dict[str, Any]:
+    user = _require_user(request)
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", task_id):
+        raise HTTPException(status_code=400, detail="Invalid progress task ID.")
     with _progress_lock:
-        return _progress.copy()
+        return _progress_by_task.get((user["user_id"], task_id), _IDLE_PROGRESS).copy()
 
 
 @app.get("/api/runtime/stats")
@@ -691,7 +807,7 @@ def api_user_me(request: Request) -> dict:
 
 @app.post("/api/search/title")
 async def api_search_title(payload: TitleSearchRequest, request: Request) -> dict[str, Any]:
-    _require_user(request)
+    user = _require_user(request)
     title = _normalize_title(payload.title)
     if not title:
         raise HTTPException(status_code=400, detail="Title is required.")
@@ -699,20 +815,24 @@ async def api_search_title(payload: TitleSearchRequest, request: Request) -> dic
     started_at = time.perf_counter()
     found = False
     error_message: str | None = None
+    verification_status = "search_error"
     try:
         # 中文文献走百度学术
         if payload.lang == "zh":
             from checker.clients.baidu_client import batch_search_baidu
             raw = await batch_search_baidu([title])
             r = raw[0] if raw else {}
-            found = bool(r.get("found"))
-            return {
-                "found": found,
+            response = _with_verification_status({
+                "found": bool(r.get("found")),
                 "query_title": title,
-                "dblp_title": r.get("matched_title") if found else None,
-                "dblp_title_similarity": r.get("similarity") if found else None,
+                "dblp_title": r.get("matched_title"),
+                "dblp_title_similarity": r.get("similarity"),
                 "source": r.get("source", "baidu"),
-            }
+                "error": r.get("error"),
+            })
+            found = bool(response["found"])
+            verification_status = response["verification_status"]
+            return response
         # 英文文献走 DBLP
         db_path = _resolve_db_path()
         if not db_path.exists():
@@ -736,23 +856,24 @@ async def api_search_title(payload: TitleSearchRequest, request: Request) -> dic
                     gs = await google_scholar_search(title)
                 except Exception as exc:
                     logger.warning(f"谷歌学术单条回退失败: {exc}")
-                    gs = {}
+                    gs = {"error": str(exc)}
                 if gs.get("found"):
-                    found = True
                     runtime_store.increment_counter("google_scholar_fallback_found")
-                    result = {
-                        "found": True,
-                        "query_title": title,
-                        "dblp_id": None,
-                        "dblp_title": gs.get("matched_title"),
-                        "dblp_title_similarity": gs.get("similarity"),
-                        "year": gs.get("year"),
-                        "venue": gs.get("venue"),
-                        "pub_type": None,
-                        "source": "google_scholar",
-                        "url": gs.get("url"),
-                        "authors": gs.get("authors"),
-                    }
+                result = _prefer_verification_result(result, {
+                    "found": bool(gs.get("found")),
+                    "query_title": title,
+                    "dblp_id": None,
+                    "dblp_title": gs.get("matched_title"),
+                    "dblp_title_similarity": gs.get("similarity"),
+                    "year": gs.get("year"),
+                    "venue": gs.get("venue"),
+                    "pub_type": None,
+                    "source": "google_scholar",
+                    "url": gs.get("url"),
+                    "authors": gs.get("authors"),
+                    "error": gs.get("error"),
+                })
+                found = bool(result["found"])
 
         # 谷歌学术仍未命中，回退到谷歌搜索（SerpApi google 引擎）
         if not found:
@@ -770,29 +891,35 @@ async def api_search_title(payload: TitleSearchRequest, request: Request) -> dic
                     gsearch = await google_search(title)
                 except Exception as exc:
                     logger.warning(f"谷歌搜索单条回退失败: {exc}")
-                    gsearch = {}
+                    gsearch = {"error": str(exc)}
                 if gsearch.get("found"):
-                    found = True
                     runtime_store.increment_counter("google_search_fallback_found")
-                    result = {
-                        "found": True,
-                        "query_title": title,
-                        "dblp_id": None,
-                        "dblp_title": gsearch.get("matched_title"),
-                        "dblp_title_similarity": gsearch.get("similarity"),
-                        "year": gsearch.get("year"),
-                        "venue": gsearch.get("venue"),
-                        "pub_type": None,
-                        "source": "google_search",
-                        "url": gsearch.get("url"),
-                        "authors": gsearch.get("authors"),
-                    }
+                result = _prefer_verification_result(result, {
+                    "found": bool(gsearch.get("found")),
+                    "query_title": title,
+                    "dblp_id": None,
+                    "dblp_title": gsearch.get("matched_title"),
+                    "dblp_title_similarity": gsearch.get("similarity"),
+                    "year": gsearch.get("year"),
+                    "venue": gsearch.get("venue"),
+                    "pub_type": None,
+                    "source": "google_search",
+                    "url": gsearch.get("url"),
+                    "authors": gsearch.get("authors"),
+                    "error": gsearch.get("error"),
+                })
+                found = bool(result["found"])
+        result = _with_verification_status(result)
+        found = bool(result["found"])
+        verification_status = result["verification_status"]
         return result
     except HTTPException as exc:
         error_message = str(exc.detail)
+        verification_status = "search_error"
         raise
     except Exception as exc:
         error_message = str(exc)
+        verification_status = "search_error"
         runtime_store.log_event(
             "ERROR",
             "single_title_search_failed",
@@ -807,12 +934,14 @@ async def api_search_title(payload: TitleSearchRequest, request: Request) -> dic
         if error_message:
             runtime_store.increment_counter("single_search_errors")
         runtime_store.record_single_search(
+            user_id=user["user_id"],
             query_title=title,
             query_hash=_title_hash(title),
             found=found,
             max_candidates=payload.max_candidates,
             duration_ms=duration_ms,
             error_message=error_message,
+            verification_status=verification_status,
         )
 
 
@@ -820,7 +949,8 @@ async def api_search_title(payload: TitleSearchRequest, request: Request) -> dic
 def api_search_title_batch(payload: BatchTitleSearchRequest, request: Request) -> dict[str, Any]:
     user = _require_user(request)
     titles = _normalize_title_list(payload.titles)
-    return _run_batch_search(titles, payload.max_candidates, lang=payload.lang, user_id=user["user_id"])
+    task_id = _progress_task_id(request)
+    return _run_batch_search(titles, payload.max_candidates, lang=payload.lang, user_id=user["user_id"], task_id=task_id)
 
 
 @app.post("/api/search/csv/batch")
@@ -834,7 +964,8 @@ def api_search_csv_batch(
     """
     user = _require_user(request)
     titles = _titles_from_csv_upload(file)
-    return _run_batch_search(titles, max_candidates, user_id=user["user_id"])
+    task_id = _progress_task_id(request)
+    return _run_batch_search(titles, max_candidates, user_id=user["user_id"], task_id=task_id)
 
 
 @app.post("/api/parse/pdf")
@@ -868,13 +999,14 @@ def api_parse_pdf(request: Request, files: list[UploadFile] = File(...)):
 def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), lang: str = Form(default="en")):
     """上传一个或多个 PDF，解析参考文献并批量检索。前端发送字段名 files。lang=zh 走百度学术，否则走 DBLP。"""
     user = _require_user(request)
+    task_id = _progress_task_id(request)
     temp_dir = Path("temp")
     temp_dir.mkdir(exist_ok=True)
 
     all_references: list[dict] = []
 
     # ── 阶段1：逐个 PDF 解析 ──────────────────────────────
-    _set_progress(status="parsing", stage="Parsing PDF references", total=0, processed=0, found=0)
+    _set_progress(user["user_id"], task_id, status="parsing", stage="Parsing PDF references", total=0, processed=0, found=0)
     for file in files:
         if not (file.filename or "").lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail=f"Only PDF files are allowed: {file.filename}")
@@ -887,7 +1019,7 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
                 ref["source_file"] = file.filename or ""
             all_references.extend(refs)
         except Exception as e:
-            _set_progress(status="error", stage=str(e))
+            _set_progress(user["user_id"], task_id, status="error", stage=str(e))
             raise HTTPException(status_code=500, detail=str(e))
         finally:
             if temp_path.exists():
@@ -900,7 +1032,7 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
     }
 
     if not titles:
-        _set_progress(status="done", stage="Done", total=0, processed=0, found=0)
+        _set_progress(user["user_id"], task_id, status="done", stage="Done", total=0, processed=0, found=0)
         return {
             "summary": {
                 "run_id": None,
@@ -909,6 +1041,10 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
                 "total_processed": 0,
                 "found_count": 0,
                 "not_found_count": 0,
+                "verified_count": 0,
+                "suspicious_count": 0,
+                "unverifiable_count": 0,
+                "error_count": 0,
                 "max_candidates": 0,
                 "duration_ms": 0,
             },
@@ -916,13 +1052,46 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
             "references": all_references,
         }
 
-    result = _run_batch_search(titles, max_candidates=100000, extra_item_fields=source_map, lang=lang, user_id=user["user_id"])
+    result = _run_batch_search(titles, max_candidates=100000, extra_item_fields=source_map, lang=lang, user_id=user["user_id"], task_id=task_id)
     result["summary"]["file_count"] = len(files)
     result["references"] = all_references
     return result
 
 
 # ── 历史记录 ────────────────────────────────────────────────
+
+@app.get("/api/history/single")
+def api_history_single(request: Request, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+    """返回当前用户最近的单条检索历史。"""
+    user = _require_user(request)
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+    conn = runtime_store._connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, query_title, found, max_candidates,
+                   duration_ms, error_message, verification_status, created_at
+            FROM single_search_events
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (user["user_id"], limit, offset),
+        ).fetchall()
+        total_row = conn.execute(
+            "SELECT COUNT(1) AS c FROM single_search_events WHERE user_id = ?",
+            (user["user_id"],),
+        ).fetchone()
+        total = int(total_row["c"]) if total_row else 0
+        return {
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "events": [dict(row) for row in rows],
+        }
+    finally:
+        conn.close()
 
 @app.get("/api/history/batch")
 def api_history_batch(request: Request, limit: int = 20, offset: int = 0) -> dict[str, Any]:
@@ -967,7 +1136,7 @@ def api_history_batch_items(run_id: int, request: Request) -> dict[str, Any]:
             """
             SELECT item_index, query_title, found, dblp_title,
                    dblp_title_similarity, year, venue, pub_type,
-                   duration_ms, error_message
+                   duration_ms, error_message, verification_status, source
             FROM batch_items WHERE run_id = ? ORDER BY item_index
             """,
             (run_id,),
@@ -996,7 +1165,7 @@ def api_history_batch_csv(run_id: int, request: Request):
             """
             SELECT item_index, query_title, found, dblp_title,
                    dblp_title_similarity, year, venue, pub_type,
-                   duration_ms, error_message
+                   duration_ms, error_message, verification_status, source
             FROM batch_items WHERE run_id = ? ORDER BY item_index
             """,
             (run_id,),

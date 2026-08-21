@@ -77,10 +77,12 @@ function DetectPage() {
             if (cancelledRef.current) return;
             const found = data.found === true;
             const sim = data.dblp_title_similarity ?? null;
-            let status: "success" | "fake" | "unknown";
-            if (found && sim !== null && sim >= 0.8) status = "success";
-            else if (found) status = "unknown";
-            else status = "fake";
+            const status = data.verification_status
+              ?? (found && sim !== null && sim >= 0.9
+                ? "verified"
+                : data.dblp_title
+                  ? "suspicious"
+                  : "unverifiable");
 
             navigate({
               to: "/result",

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState, useEffect } from "react";
-import { FileText, Upload, X, CheckCircle2, AlertTriangle, Download } from "lucide-react";
+import { FileText, Upload, X, CheckCircle2, AlertTriangle, Download, HelpCircle, XCircle } from "lucide-react";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteBackdrop } from "@/components/SiteBackdrop";
 import { useT } from "@/lib/i18n";
@@ -26,7 +26,9 @@ type BatchResultItem = {
   year?: string | number;
   venue?: string;
   source_file?: string;
+  source?: string;
   error_message?: string;
+  verification_status: "verified" | "suspicious" | "unverifiable" | "search_error";
 };
 
 type BatchSummary = {
@@ -35,6 +37,10 @@ type BatchSummary = {
   total_processed: number;
   found_count: number;
   not_found_count: number;
+  verified_count: number;
+  suspicious_count: number;
+  unverifiable_count: number;
+  error_count: number;
   duration_ms: number;
 };
 
@@ -92,11 +98,13 @@ function BatchSearchPage() {
   };
   useEffect(() => () => stopPolling(), []);
 
-  const startPolling = () => {
+  const startPolling = (taskId: string) => {
     stopPolling();
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch("/api/progress");
+        const res = await fetch(`/api/progress?task_id=${encodeURIComponent(taskId)}`, {
+          credentials: "include",
+        });
         const data: ProgressState = await res.json();
         setProgress(data);
         if (data.status === "done" || data.status === "error") stopPolling();
@@ -145,11 +153,15 @@ function BatchSearchPage() {
     setSummary(null);
     setItems([]);
     setProgress({ status: "searching", stage: `Searching ${sourceNameEn}`, total: lines.length, processed: 0, found: 0 });
-    startPolling();
+    const taskId = crypto.randomUUID();
+    startPolling(taskId);
     try {
       const res = await fetch("/api/search/title/batch", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Progress-Task-ID": taskId,
+        },
         body: JSON.stringify({ titles: lines, lang }),
         credentials: "include",
       });
@@ -180,7 +192,8 @@ function BatchSearchPage() {
     setSummary(null);
     setItems([]);
     setProgress({ status: "parsing", stage: "Parsing PDF", total: 0, processed: 0, found: 0 });
-    startPolling();
+    const taskId = crypto.randomUUID();
+    startPolling(taskId);
 
     const formData = new FormData();
     // 后端接收字段名为 files（复数）
@@ -190,6 +203,7 @@ function BatchSearchPage() {
     try {
       const res = await fetch("/api/search/pdf/batch", {
         method: "POST",
+        headers: { "X-Progress-Task-ID": taskId },
         body: formData,
         credentials: "include",
       });
@@ -223,7 +237,8 @@ function BatchSearchPage() {
     setSummary(null);
     setItems([]);
     setProgress({ status: "searching", stage: "Uploading CSV", total: 0, processed: 0, found: 0 });
-    startPolling();
+    const taskId = crypto.randomUUID();
+    startPolling(taskId);
 
     const formData = new FormData();
     formData.append("file", csvFile);
@@ -231,6 +246,7 @@ function BatchSearchPage() {
     try {
       const res = await fetch("/api/search/csv/batch", {
         method: "POST",
+        headers: { "X-Progress-Task-ID": taskId },
         body: formData,
         credentials: "include",
       });
@@ -260,16 +276,19 @@ function BatchSearchPage() {
       window.open(`/api/history/batch/${summary.run_id}/csv`, "_blank");
       return;
     }
-    const header = "index,query_title,found,dblp_title,similarity,year,venue\n";
+    const header = "index,query_title,verification_status,found,dblp_title,similarity,source,year,venue,error_message\n";
     const rows = items.map(it =>
       [
         it.index,
         `"${(it.query_title || "").replace(/"/g, '""')}"`,
+        it.verification_status,
         it.found ? 1 : 0,
         `"${(it.dblp_title || "").replace(/"/g, '""')}"`,
         it.dblp_title_similarity != null ? Math.round(it.dblp_title_similarity * 100) : "",
+        it.source ?? "",
         it.year ?? "",
-        it.venue ?? "",
+        `"${(it.venue || "").replace(/"/g, '""')}"`,
+        `"${(it.error_message || "").replace(/"/g, '""')}"`,
       ].join(",")
     ).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
@@ -531,11 +550,13 @@ function BatchSearchPage() {
           {/* 结果汇总 */}
           {summary && (
             <div className="mt-6 animate-blur-fade-up">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
                 {[
                   { label: t({ zh: "总计", en: "Total" }), value: summary.total_processed, color: "text-white" },
-                  { label: t({ zh: "已找到", en: "Found" }), value: summary.found_count, color: "text-emerald-300" },
-                  { label: t({ zh: "未找到", en: "Not found" }), value: summary.not_found_count, color: "text-rose-300" },
+                  { label: t({ zh: "真实引用", en: "Verified" }), value: summary.verified_count, color: "text-emerald-300" },
+                  { label: t({ zh: "疑似异常", en: "Suspicious" }), value: summary.suspicious_count, color: "text-amber-300" },
+                  { label: t({ zh: "无法验证", en: "Unverifiable" }), value: summary.unverifiable_count, color: "text-gray-300" },
+                  { label: t({ zh: "检索异常", en: "Errors" }), value: summary.error_count, color: "text-rose-300" },
                   { label: t({ zh: "耗时", en: "Duration" }), value: `${(summary.duration_ms / 1000).toFixed(1)}s`, color: "text-white" },
                 ].map(c => (
                   <div key={c.label} className="liquid-glass rounded-2xl p-4 text-center">
@@ -573,10 +594,17 @@ function BatchSearchPage() {
                           const sim = item.dblp_title_similarity;
                           const simPct = sim != null ? (sim * 100).toFixed(1) : null;
                           const simNum = simPct != null ? parseFloat(simPct) : null;
-                        const simColor = simNum == null ? "text-gray-500"
+                          const simColor = simNum == null ? "text-gray-500"
                             : simNum >= 90 ? "text-emerald-300"
                             : simNum >= 50 ? "text-amber-300"
                             : "text-rose-300";
+                          const statusMeta = {
+                            verified: { label: t({ zh: "真实引用", en: "Verified" }), color: "text-emerald-400", Icon: CheckCircle2 },
+                            suspicious: { label: t({ zh: "疑似异常", en: "Suspicious" }), color: "text-amber-300", Icon: AlertTriangle },
+                            unverifiable: { label: t({ zh: "无法验证", en: "Unverifiable" }), color: "text-gray-400", Icon: HelpCircle },
+                            search_error: { label: t({ zh: "检索异常", en: "Search error" }), color: "text-rose-400", Icon: XCircle },
+                          }[item.verification_status];
+                          const StatusIcon = statusMeta.Icon;
                           return (
                             <tr key={item.index} className="border-b border-white/5 hover:bg-white/3 transition-colors">
                               <td className="px-5 py-3 text-gray-500 tabular-nums">{item.index}</td>
@@ -591,10 +619,10 @@ function BatchSearchPage() {
                               <td className={`px-5 py-3 text-right tabular-nums ${simColor}`}>
                                 {simPct != null ? `${simPct}%` : "—"}
                               </td>
-                              <td className="px-5 py-3 text-right">
-                                {item.found
-                                  ? <CheckCircle2 size={16} className="inline text-emerald-400" />
-                                  : <AlertTriangle size={16} className="inline text-rose-400" />}
+                              <td className={`px-5 py-3 text-right whitespace-nowrap ${statusMeta.color}`}>
+                                <span className="inline-flex items-center gap-1.5 text-xs">
+                                  <StatusIcon size={15} /> {statusMeta.label}
+                                </span>
                               </td>
                             </tr>
                           );

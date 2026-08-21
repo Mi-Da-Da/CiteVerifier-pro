@@ -20,7 +20,17 @@ logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=4)
 
 _CACHE_TTL = 86400
+_CACHE_MIN_SIMILARITY = 0.9
 _CACHE_DB_PATH = Path(__file__).parent.parent.parent / "data/baidu_cache.db"
+
+
+def _is_cacheable_result(result: Dict) -> bool:
+    if not isinstance(result, dict) or not result.get("是否存在") or result.get("错误信息"):
+        return False
+    try:
+        return float(result.get("置信度") or 0) >= _CACHE_MIN_SIMILARITY
+    except (TypeError, ValueError):
+        return False
 
 
 class BaiduCache:
@@ -59,9 +69,9 @@ class BaiduCache:
                 if time.time() - created_at < _CACHE_TTL:
                     try:
                         result = json.loads(result_json)
-                        if isinstance(result, dict) and result.get("是否存在"):
+                        if _is_cacheable_result(result):
                             return result
-                        # 未命中结果不属于有效缓存；兼容清理历史脏数据。
+                        # 低相似度、未命中或异常结果不属于有效缓存。
                         conn.execute(
                             "DELETE FROM baidu_search_cache WHERE normalized_title = ?",
                             (normalized_title,),
@@ -76,8 +86,8 @@ class BaiduCache:
         return None
 
     def set(self, normalized_title: str, result: Dict) -> None:
-        # 缓存层自身兜底：百度学术未找到的结果绝不写入缓存。
-        if not normalized_title or not result.get("是否存在"):
+        # 缓存层自身兜底：仅缓存相似度不低于 0.9 的有效匹配。
+        if not normalized_title or not _is_cacheable_result(result):
             return
         result_json = json.dumps(result, ensure_ascii=False)
         with sqlite3.connect(self.db_path) as conn:
@@ -134,7 +144,7 @@ def _get_cached_result(title: str) -> Optional[Dict]:
 
 def _set_cached_result(title: str, result: Dict) -> None:
     normalized = _normalize_title(title)
-    if not normalized:
+    if not normalized or not _is_cacheable_result(result):
         return
     _cache.set(normalized, result)
     logger.debug(f"缓存写入: {title[:30]}...")

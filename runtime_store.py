@@ -43,15 +43,42 @@ class RuntimeStore:
                     """
                     CREATE TABLE IF NOT EXISTS single_search_events (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER,
                         query_title TEXT NOT NULL,
                         query_hash TEXT,
                         found INTEGER NOT NULL DEFAULT 0,
                         max_candidates INTEGER NOT NULL,
                         duration_ms INTEGER,
                         error_message TEXT,
+                        verification_status TEXT,
                         created_at TEXT NOT NULL DEFAULT (datetime('now'))
                     )
                     """
+                )
+                # 兼容已有数据库：旧记录没有用户归属，保留但不向任何用户展示。
+                single_cols = {
+                    r["name"] for r in conn.execute("PRAGMA table_info(single_search_events)")
+                }
+                if "user_id" not in single_cols:
+                    conn.execute("ALTER TABLE single_search_events ADD COLUMN user_id INTEGER")
+                if "verification_status" not in single_cols:
+                    conn.execute(
+                        "ALTER TABLE single_search_events ADD COLUMN verification_status TEXT"
+                    )
+                    conn.execute(
+                        """
+                        UPDATE single_search_events
+                        SET verification_status = CASE
+                            WHEN error_message IS NOT NULL THEN 'search_error'
+                            WHEN found = 1 THEN 'verified'
+                            ELSE 'unverifiable'
+                        END
+                        WHERE verification_status IS NULL
+                        """
+                    )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_single_search_user "
+                    "ON single_search_events(user_id, id DESC)"
                 )
                 conn.execute(
                     """
@@ -90,11 +117,33 @@ class RuntimeStore:
                         pub_type TEXT,
                         duration_ms INTEGER,
                         error_message TEXT,
+                        verification_status TEXT,
+                        source TEXT,
                         created_at TEXT NOT NULL DEFAULT (datetime('now')),
                         FOREIGN KEY(run_id) REFERENCES batch_runs(id) ON DELETE CASCADE
                     )
                     """
                 )
+                batch_item_cols = {
+                    r["name"] for r in conn.execute("PRAGMA table_info(batch_items)")
+                }
+                if "verification_status" not in batch_item_cols:
+                    conn.execute(
+                        "ALTER TABLE batch_items ADD COLUMN verification_status TEXT"
+                    )
+                    conn.execute(
+                        """
+                        UPDATE batch_items
+                        SET verification_status = CASE
+                            WHEN error_message IS NOT NULL THEN 'search_error'
+                            WHEN found = 1 THEN 'verified'
+                            ELSE 'unverifiable'
+                        END
+                        WHERE verification_status IS NULL
+                        """
+                    )
+                if "source" not in batch_item_cols:
+                    conn.execute("ALTER TABLE batch_items ADD COLUMN source TEXT")
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS event_logs (
@@ -204,6 +253,8 @@ class RuntimeStore:
         pub_type: str | None,
         duration_ms: int,
         error_message: str | None,
+        verification_status: str,
+        source: str | None,
     ) -> None:
         self._ensure_initialized()
         conn = self._connect()
@@ -222,8 +273,10 @@ class RuntimeStore:
                     venue,
                     pub_type,
                     duration_ms,
-                    error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    error_message,
+                    verification_status,
+                    source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     int(run_id),
@@ -238,6 +291,8 @@ class RuntimeStore:
                     pub_type,
                     int(duration_ms),
                     error_message,
+                    verification_status,
+                    source,
                 ),
             )
             conn.commit()
@@ -247,12 +302,14 @@ class RuntimeStore:
     def record_single_search(
         self,
         *,
+        user_id: int,
         query_title: str,
         query_hash: str,
         found: bool,
         max_candidates: int,
         duration_ms: int,
         error_message: str | None,
+        verification_status: str,
     ) -> None:
         self._ensure_initialized()
         conn = self._connect()
@@ -260,21 +317,25 @@ class RuntimeStore:
             conn.execute(
                 """
                 INSERT INTO single_search_events (
+                    user_id,
                     query_title,
                     query_hash,
                     found,
                     max_candidates,
                     duration_ms,
-                    error_message
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    error_message,
+                    verification_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    int(user_id),
                     query_title,
                     query_hash,
                     1 if found else 0,
                     int(max_candidates),
                     int(duration_ms),
                     error_message,
+                    verification_status,
                 ),
             )
             conn.commit()

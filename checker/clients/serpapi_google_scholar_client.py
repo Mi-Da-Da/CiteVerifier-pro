@@ -38,6 +38,7 @@ if _load_dotenv is not None:
 
 # ── 基本配置 ───────────────────────────────────────────────────
 _CACHE_TTL = 86400  # 缓存 24 小时
+_CACHE_MIN_SIMILARITY = 0.9
 _CACHE_DB_PATH = Path(__file__).parent.parent.parent / "data" / "google_scholar_cache.db"
 _SERPAPI_API_KEY_ENV = "SERPAPI_API_KEY"
 # 标题相似度达到此阈值即视为命中
@@ -50,6 +51,15 @@ _MAX_RESULTS_TO_CONSIDER = 3
 _YEAR_PATTERN = re.compile(r"\b(19|20)\d{2}\b")
 
 _executor: Optional[ThreadPoolExecutor] = None
+
+
+def _is_cacheable_result(result: Dict) -> bool:
+    if not isinstance(result, dict) or not result.get("found") or result.get("error"):
+        return False
+    try:
+        return float(result.get("similarity") or 0) >= _CACHE_MIN_SIMILARITY
+    except (TypeError, ValueError):
+        return False
 
 
 def _get_executor() -> ThreadPoolExecutor:
@@ -109,9 +119,11 @@ class GoogleScholarCache:
                 if time.time() - created_at < _CACHE_TTL:
                     try:
                         result = json.loads(result_json)
-                        if isinstance(result, dict) and result.get("found"):
+                        if (
+                            _is_cacheable_result(result)
+                        ):
                             return result
-                        # 未命中结果不属于有效缓存；兼容清理历史脏数据。
+                        # 低相似度、未命中或异常结果不属于有效缓存。
                         conn.execute(
                             "DELETE FROM google_scholar_cache WHERE normalized_title = ?",
                             (normalized_title,),
@@ -126,8 +138,10 @@ class GoogleScholarCache:
         return None
 
     def set(self, normalized_title: str, result: Dict) -> None:
-        # 缓存层自身兜底：谷歌学术未找到的结果绝不写入缓存。
-        if not normalized_title or not result.get("found"):
+        # 缓存层自身兜底：仅缓存相似度不低于 0.9 的有效匹配。
+        if (
+            not normalized_title or not _is_cacheable_result(result)
+        ):
             return
         result_json = json.dumps(result, ensure_ascii=False)
         with sqlite3.connect(self.db_path) as conn:
