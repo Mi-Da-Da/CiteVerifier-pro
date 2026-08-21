@@ -7,12 +7,15 @@ echo    CiteVerifier Quick Start
 echo ========================================
 echo.
 
-REM Check Python
-py --version >nul 2>&1
+REM Check Python (try both 'python' and 'py' commands)
+python --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Python not found. Please install Python 3.10+
-    pause
-    exit /b 1
+    py --version >nul 2>&1
+    if errorlevel 1 (
+        echo [ERROR] Python not found. Please install Python 3.10+
+        pause
+        exit /b 1
+    )
 )
 
 REM Check Node.js
@@ -28,8 +31,8 @@ echo.
 
 REM Install backend dependencies if needed
 if not exist "venv" (
-    echo [INSTALL] Installing backend dependencies...
-    pip install -r requirements.txt
+    echo [INSTALL] Installing backend dependencies with uv...
+    uv pip install -r requirements.txt
     if errorlevel 1 (
         echo [ERROR] Failed to install backend dependencies
         pause
@@ -70,7 +73,7 @@ for %%P in (8080 8092) do (
 
 REM Start backend server
 echo [1/2] Starting backend server (port 8092)...
-start "CiteVerifier Backend" cmd /k "py -m uvicorn web_app:app --host 0.0.0.0 --port 8092"
+start "CiteVerifier Backend" cmd /k "python -m uvicorn web_app:app --host 0.0.0.0 --port 8092"
 
 REM Wait for backend to start
 timeout /t 3 /nobreak >nul
