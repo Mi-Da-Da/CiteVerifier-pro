@@ -97,6 +97,7 @@ class UserSession:
 
     def register(self) -> bool:
         try:
+            print(f"register: {self.username}")
             r = self.s.post(
                 f"{self.base_url}/api/user/register",
                 json={"username": self.username, "password": self.password, "email": self.email},

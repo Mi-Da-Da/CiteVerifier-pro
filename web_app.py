@@ -11,8 +11,9 @@ import re
 import sqlite3
 import threading
 import time
+import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 # 尽早加载 .env（必须在 import 任何子模块之前，确保 os.environ 已填充）
@@ -1010,7 +1011,10 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
     for file in files:
         if not (file.filename or "").lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail=f"Only PDF files are allowed: {file.filename}")
-        temp_path = temp_dir / (file.filename or "upload.pdf")
+        # 用 uuid 前缀避免多用户同时上传同名 PDF 时 temp 文件互相覆盖 / 误删
+        # 同时取 basename 防止恶意路径穿越（如 ../../foo.pdf）
+        safe_name = PurePath(file.filename or "upload.pdf").name
+        temp_path = temp_dir / f"{uuid.uuid4().hex}_{safe_name}"
         try:
             with open(temp_path, "wb") as f:
                 f.write(file.file.read())
