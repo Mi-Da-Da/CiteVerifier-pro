@@ -23,6 +23,10 @@ services:
     environment:
       DBLP_DB_PATH: "/data/dblp.sqlite"
       CITEVERIFIER_DATA_DIR: "/runtime"
+      WEB_WORKERS: "${WEB_WORKERS:-2}"
+      BAIDU_BROWSER_POOL_SIZE: "${BAIDU_BROWSER_POOL_SIZE:-2}"
+      BAIDU_HEADLESS: "1"
+      SESSION_SECRET: "${SESSION_SECRET:-change-this-before-production}"
     volumes:
       - dblp_data:/data
       - citeverifier_runtime:/runtime

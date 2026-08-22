@@ -5,7 +5,7 @@ import csv
 import hashlib
 import io
 import logging
-import multiprocessing as mp
+import math
 import os
 import re
 import sqlite3
@@ -66,10 +66,6 @@ _IDLE_PROGRESS: dict[str, Any] = {
     "processed": 0,
     "found": 0,
 }
-_progress_by_task: dict[tuple[int, str], dict[str, Any]] = {}
-_progress_lock = threading.Lock()
-
-
 def _progress_task_id(request: Request) -> str:
     """读取前端生成的任务标识；旧客户端未传时仍可使用默认任务。"""
     task_id = request.headers.get("X-Progress-Task-ID", "default").strip()
@@ -79,10 +75,7 @@ def _progress_task_id(request: Request) -> str:
 
 
 def _set_progress(user_id: int, task_id: str, **kwargs: Any) -> None:
-    with _progress_lock:
-        key = (user_id, task_id)
-        progress = _progress_by_task.setdefault(key, _IDLE_PROGRESS.copy())
-        progress.update(kwargs)
+    runtime_store.set_task_progress(user_id, task_id, _IDLE_PROGRESS, kwargs)
 
 
 _prewarm_tasks: set[asyncio.Task] = set()
@@ -91,11 +84,19 @@ _prewarm_tasks: set[asyncio.Task] = set()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_user_db()
+    runtime_store.purge_task_progress()
     # 后台预安装 ChromeDriver，避免首次百度学术搜索时阻塞
     task = asyncio.create_task(asyncio.to_thread(_prewarm_chromedriver))
     _prewarm_tasks.add(task)
     task.add_done_callback(_prewarm_tasks.discard)
-    yield
+    try:
+        yield
+    finally:
+        try:
+            from checker.clients.baidu_selenium import shutdown_browser_pool
+            await asyncio.to_thread(shutdown_browser_pool)
+        except Exception as exc:
+            logger.warning(f"ChromeDriver pool shutdown failed: {exc}")
 
 
 def _prewarm_chromedriver() -> None:
@@ -230,6 +231,19 @@ _NO_RESULT_ERROR_MARKERS = ("无结果", "未找到", "no result", "not found")
 
 def _is_chinese_title(title: str) -> bool:
     return bool(_CJK_PATTERN.search(title))
+
+
+def _json_safe(value: Any) -> Any:
+    """Recursively replace non-finite floats that standard JSON rejects."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _with_verification_status(result: dict[str, Any]) -> dict[str, Any]:
@@ -752,8 +766,7 @@ def api_progress(request: Request, task_id: str = "default") -> dict[str, Any]:
     user = _require_user(request)
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", task_id):
         raise HTTPException(status_code=400, detail="Invalid progress task ID.")
-    with _progress_lock:
-        return _progress_by_task.get((user["user_id"], task_id), _IDLE_PROGRESS).copy()
+    return runtime_store.get_task_progress(user["user_id"], task_id, _IDLE_PROGRESS)
 
 
 @app.get("/api/runtime/stats")
@@ -1037,7 +1050,7 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
 
     if not titles:
         _set_progress(user["user_id"], task_id, status="done", stage="Done", total=0, processed=0, found=0)
-        return {
+        return _json_safe({
             "summary": {
                 "run_id": None,
                 "file_count": len(files),
@@ -1054,12 +1067,12 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
             },
             "items": [],
             "references": all_references,
-        }
+        })
 
     result = _run_batch_search(titles, max_candidates=100000, extra_item_fields=source_map, lang=lang, user_id=user["user_id"], task_id=task_id)
     result["summary"]["file_count"] = len(files)
     result["references"] = all_references
-    return result
+    return _json_safe(result)
 
 
 # ── 历史记录 ────────────────────────────────────────────────

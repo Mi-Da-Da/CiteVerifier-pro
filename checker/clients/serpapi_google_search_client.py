@@ -23,6 +23,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from sqlite_utils import sqlite_connection
+
 from checker.utils import StringUtils
 
 logger = logging.getLogger(__name__)
@@ -80,7 +82,7 @@ class GoogleSearchCache:
 
     def _init_db(self):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS google_search_cache (
@@ -102,7 +104,7 @@ class GoogleSearchCache:
     def get(self, normalized_title: str) -> Optional[Dict]:
         if not normalized_title:
             return None
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             cursor = conn.execute(
                 """
                 SELECT result_json, created_at FROM google_search_cache
@@ -141,7 +143,7 @@ class GoogleSearchCache:
         ):
             return
         result_json = json.dumps(result, ensure_ascii=False)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             try:
                 conn.execute(
                     """
@@ -156,7 +158,7 @@ class GoogleSearchCache:
                 logger.error(f"谷歌搜索缓存写入失败: {e}")
 
     def delete(self, normalized_title: str) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             conn.execute(
                 "DELETE FROM google_search_cache WHERE normalized_title = ?",
                 (normalized_title,),
@@ -165,7 +167,7 @@ class GoogleSearchCache:
 
     def clear_expired(self) -> int:
         cutoff = time.time() - _CACHE_TTL
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             cursor = conn.execute(
                 "DELETE FROM google_search_cache WHERE created_at < ?", (cutoff,)
             )
@@ -173,7 +175,7 @@ class GoogleSearchCache:
             return cursor.rowcount
 
     def get_stats(self) -> Dict[str, int]:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             cursor = conn.execute("SELECT COUNT(*) FROM google_search_cache")
             total = cursor.fetchone()[0]
             cutoff = time.time() - _CACHE_TTL

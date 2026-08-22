@@ -114,6 +114,8 @@ setup_backend() {
     if [[ -f .env ]]; then
         cp .env ".env.bak.$(date +%s)"
     fi
+    local session_secret
+    session_secret=$(venv/bin/python -c 'import secrets; print(secrets.token_hex(32))')
     cat > .env <<EOF
 # 由 deploy.sh 自动生成
 SERPAPI_API_KEY=$SERPAPI_API_KEY
@@ -128,6 +130,12 @@ DBLP_DB_PATH=$PROJECT_DIR/dblp.sqlite
 
 # Cookie 安全配置
 COOKIE_SECURE=true
+SESSION_SECRET=$session_secret
+
+# 并发配置：2 web workers x 每 worker 2 个常驻 Chrome
+WEB_WORKERS=2
+BAIDU_BROWSER_POOL_SIZE=2
+BAIDU_HEADLESS=1
 EOF
     log ".env 已生成，记得回头改 SERPAPI_API_KEY / DASHSCOPE_API_KEY"
 
@@ -195,7 +203,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=$PROJECT_DIR
 EnvironmentFile=$PROJECT_DIR/.env
-ExecStart=$PROJECT_DIR/venv/bin/python -m uvicorn web_app:app --host 127.0.0.1 --port 8092
+ExecStart=$PROJECT_DIR/venv/bin/python -m uvicorn web_app:app --host 127.0.0.1 --port 8092 --workers 2
 Restart=on-failure
 RestartSec=3
 # ChromeDriver 下载目录允许写

@@ -8,7 +8,8 @@ from selenium.webdriver.common.keys import Keys
 import time
 import pandas as pd
 from rapidfuzz import fuzz
-from multiprocessing import Pool, cpu_count
+from concurrent.futures import ThreadPoolExecutor
+from queue import Queue
 from webdrivermanager_cn import ChromeDriverManagerAliMirror
 import os
 import socket
@@ -119,15 +120,17 @@ def search_batch_in_browser(args):
     """
     单个浏览器连续搜索多个标题
     """
-    titles_list, headless, exact_match, similarity_threshold, browser_id, driver_path = args
+    titles_list, headless, exact_match, similarity_threshold, browser_id, driver_path, *provided = args
 
-    driver = None
+    driver = provided[0] if provided else None
+    owns_driver = driver is None
     results = []
 
     print(f"[浏览器 {browser_id}] 启动，准备搜索 {len(titles_list)} 个标题")
 
     try:
-        driver = create_driver(headless, driver_path)
+        if owns_driver:
+            driver = create_driver(headless, driver_path)
 
         # 首次加载首页
         if not get_url_with_retry(driver, "https://xueshu.baidu.com/", max_retries=3):
@@ -297,7 +300,7 @@ def search_batch_in_browser(args):
         print(f"[浏览器 {browser_id}] ❌ 程序出错: {e}")
         return []
     finally:
-        if driver:
+        if owns_driver and driver:
             driver.quit()
             print(f"[浏览器 {browser_id}] 浏览器已关闭")
 
@@ -332,45 +335,162 @@ def ensure_chromedriver(driver_path: str | None = None) -> str:
         print("正在检测 Chrome 版本并准备对应驱动...")
         # 安装到项目根目录下的 chromedriver 子目录，基于 __file__ 解析避免受 cwd 影响
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        path = ChromeDriverManagerAliMirror(path=os.path.join(project_root, "chromedriver")).install()
+        driver_dir = os.path.join(project_root, "chromedriver")
+        os.makedirs(driver_dir, exist_ok=True)
+        install_lock = os.path.join(driver_dir, ".install.lock")
+        deadline = time.time() + 120
+        lock_fd = None
+        while lock_fd is None:
+            try:
+                lock_fd = os.open(install_lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+            except FileExistsError:
+                try:
+                    if time.time() - os.path.getmtime(install_lock) > 300:
+                        os.unlink(install_lock)
+                        continue
+                except FileNotFoundError:
+                    continue
+                if time.time() >= deadline:
+                    raise TimeoutError("Timed out waiting for ChromeDriver installation lock")
+                time.sleep(0.2)
+        try:
+            path = ChromeDriverManagerAliMirror(path=driver_dir).install()
+        finally:
+            os.close(lock_fd)
+            try:
+                os.unlink(install_lock)
+            except FileNotFoundError:
+                pass
         print(f"ChromeDriver 已准备完成: {path}")
         _DRIVER_PATH_CACHE = path
         return path
 
 
-def batch_validate_parallel(titles_list, headless=False, exact_match=False,
-                            similarity_threshold=0.7, max_workers=3,
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+class ChromeDriverPool:
+    """A small, process-local pool; one driver is never shared concurrently."""
+
+    def __init__(self, size=None, headless=None, driver_path=None, driver_factory=None):
+        configured = size if size is not None else os.getenv("BAIDU_BROWSER_POOL_SIZE", "2")
+        self.size = max(1, int(configured))
+        self.headless = _env_flag("BAIDU_HEADLESS", True) if headless is None else headless
+        self.driver_path = driver_path
+        self.driver_factory = driver_factory or create_driver
+        self._drivers = Queue(maxsize=self.size)
+        self._initialized = False
+        self._init_lock = threading.Lock()
+
+    def _new_driver(self):
+        path = ensure_chromedriver(self.driver_path)
+        return self.driver_factory(self.headless, path)
+
+    def _ensure_initialized(self):
+        if self._initialized:
+            return
+        with self._init_lock:
+            if self._initialized:
+                return
+            created = []
+            try:
+                for _ in range(self.size):
+                    created.append(self._new_driver())
+                for driver in created:
+                    self._drivers.put(driver)
+                self._initialized = True
+            except Exception:
+                for driver in created:
+                    try:
+                        driver.quit()
+                    except Exception:
+                        pass
+                raise
+
+    def _return_driver(self, driver):
+        try:
+            _ = driver.current_url
+        except Exception:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+            driver = self._new_driver()
+        self._drivers.put(driver)
+
+    def search(self, titles_list, exact_match=False, similarity_threshold=0.7):
+        if not titles_list:
+            return []
+        self._ensure_initialized()
+        worker_count = min(self.size, len(titles_list))
+        chunks = split_list_into_chunks(titles_list, worker_count)
+
+        def run_chunk(item):
+            browser_id, chunk = item
+            driver = self._drivers.get()
+            try:
+                return search_batch_in_browser((
+                    chunk, self.headless, exact_match, similarity_threshold,
+                    browser_id, self.driver_path, driver,
+                ))
+            finally:
+                self._return_driver(driver)
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            nested = list(executor.map(run_chunk, enumerate(chunks, 1)))
+        return [result for group in nested for result in group]
+
+    def shutdown(self):
+        with self._init_lock:
+            while not self._drivers.empty():
+                driver = self._drivers.get_nowait()
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+            self._initialized = False
+
+
+_BROWSER_POOL = None
+_BROWSER_POOL_LOCK = threading.Lock()
+
+
+def get_browser_pool(headless=None, max_workers=None, driver_path=None):
+    global _BROWSER_POOL
+    with _BROWSER_POOL_LOCK:
+        if _BROWSER_POOL is None:
+            _BROWSER_POOL = ChromeDriverPool(max_workers, headless, driver_path)
+        return _BROWSER_POOL
+
+
+def shutdown_browser_pool():
+    global _BROWSER_POOL
+    with _BROWSER_POOL_LOCK:
+        if _BROWSER_POOL is not None:
+            _BROWSER_POOL.shutdown()
+            _BROWSER_POOL = None
+
+
+def batch_validate_parallel(titles_list, headless=None, exact_match=False,
+                            similarity_threshold=0.7, max_workers=None,
                             driver_path: str | None = None):
-    """多浏览器并行批量验证"""
-    # 复用进程级缓存的驱动路径；系统启动时已预装，避免每次搜索重复下载
-    driver_path = ensure_chromedriver(driver_path)
-
-    if max_workers is None:
-        max_workers = min(cpu_count(), len(titles_list), 4)
-
-    chunks = split_list_into_chunks(titles_list, max_workers)
-    chunks = [chunk for chunk in chunks if chunk]
-    actual_workers = len(chunks)
+    """使用当前 web worker 的常驻 ChromeDriver 池并行验证。"""
+    pool = get_browser_pool(headless, max_workers, driver_path)
+    actual_workers = min(pool.size, len(titles_list))
 
     print(f"标题总数: {len(titles_list)}")
     print(f"启动 {actual_workers} 个浏览器并行搜索...")
+    chunks = split_list_into_chunks(titles_list, actual_workers) if titles_list else []
     print(f"分配方案: {[len(chunk) for chunk in chunks]}")
     print("=" * 60)
 
     start_time = time.time()
 
-    args_list = [
-        (chunk, headless, exact_match, similarity_threshold, i + 1, driver_path)
-        for i, chunk in enumerate(chunks)
-    ]
-
-    with Pool(processes=actual_workers) as pool:
-        all_results = pool.map(search_batch_in_browser, args_list)
-
-    # 合并所有结果
-    combined_results = []
-    for results in all_results:
-        combined_results.extend(results)
+    combined_results = pool.search(titles_list, exact_match, similarity_threshold)
 
     # 按原始顺序排序
     order_map = {title: idx for idx, title in enumerate(titles_list)}

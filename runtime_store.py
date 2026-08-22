@@ -6,6 +6,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from sqlite_utils import connect_sqlite
+
 
 class RuntimeStore:
     def __init__(self, db_path: Path) -> None:
@@ -16,9 +18,7 @@ class RuntimeStore:
         self._ensure_initialized()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=30)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return connect_sqlite(self.db_path, row_factory=True)
 
     def _ensure_initialized(self) -> None:
         if self._initialized:
@@ -28,8 +28,6 @@ class RuntimeStore:
                 return
             conn = self._connect()
             try:
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA synchronous=NORMAL")
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS runtime_counters (
@@ -155,10 +153,100 @@ class RuntimeStore:
                     )
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS task_progress (
+                        user_id INTEGER NOT NULL,
+                        task_id TEXT NOT NULL,
+                        progress_json TEXT NOT NULL,
+                        updated_at REAL NOT NULL,
+                        PRIMARY KEY (user_id, task_id)
+                    )
+                    """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_task_progress_updated "
+                    "ON task_progress(updated_at)"
+                )
                 conn.commit()
                 self._initialized = True
             finally:
                 conn.close()
+
+    def set_task_progress(
+        self,
+        user_id: int,
+        task_id: str,
+        defaults: dict[str, Any],
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        self._ensure_initialized()
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT progress_json FROM task_progress WHERE user_id = ? AND task_id = ?",
+                (int(user_id), task_id),
+            ).fetchone()
+            progress = dict(defaults)
+            if row is not None:
+                try:
+                    stored = json.loads(row["progress_json"])
+                    if isinstance(stored, dict):
+                        progress.update(stored)
+                except (TypeError, json.JSONDecodeError):
+                    pass
+            progress.update(updates)
+            conn.execute(
+                """
+                INSERT INTO task_progress (user_id, task_id, progress_json, updated_at)
+                VALUES (?, ?, ?, strftime('%s','now'))
+                ON CONFLICT(user_id, task_id) DO UPDATE SET
+                    progress_json = excluded.progress_json,
+                    updated_at = excluded.updated_at
+                """,
+                (int(user_id), task_id, json.dumps(progress, ensure_ascii=False)),
+            )
+            conn.commit()
+            return progress
+        finally:
+            conn.close()
+
+    def get_task_progress(
+        self, user_id: int, task_id: str, defaults: dict[str, Any]
+    ) -> dict[str, Any]:
+        self._ensure_initialized()
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT progress_json FROM task_progress WHERE user_id = ? AND task_id = ?",
+                (int(user_id), task_id),
+            ).fetchone()
+            if row is None:
+                return dict(defaults)
+            try:
+                stored = json.loads(row["progress_json"])
+            except (TypeError, json.JSONDecodeError):
+                return dict(defaults)
+            progress = dict(defaults)
+            if isinstance(stored, dict):
+                progress.update(stored)
+            return progress
+        finally:
+            conn.close()
+
+    def purge_task_progress(self, max_age_seconds: int = 86400) -> int:
+        self._ensure_initialized()
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                "DELETE FROM task_progress WHERE updated_at < strftime('%s','now') - ?",
+                (int(max_age_seconds),),
+            )
+            conn.commit()
+            return int(cursor.rowcount)
+        finally:
+            conn.close()
 
     def increment_counter(self, name: str, delta: int = 1) -> int:
         self._ensure_initialized()

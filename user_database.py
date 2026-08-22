@@ -3,12 +3,12 @@ import hashlib
 import os
 from pathlib import Path
 
+from sqlite_utils import connect_sqlite
+
 DB_PATH = "users.db"
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect_sqlite(DB_PATH, row_factory=True)
 
 def init_user_db():
     """初始化用户表"""

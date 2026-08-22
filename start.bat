@@ -30,9 +30,18 @@ echo [OK] Python and Node.js installed
 echo.
 
 REM Install backend dependencies if needed
-if not exist "venv" (
-    echo [INSTALL] Installing backend dependencies with uv...
-    uv pip install -r requirements.txt
+if not exist "venv\Scripts\python.exe" (
+    echo [INSTALL] Creating virtual environment...
+    python -m venv venv 2>nul
+    if not exist "venv\Scripts\python.exe" py -m venv venv
+    if not exist "venv\Scripts\python.exe" (
+        echo [ERROR] Failed to create virtual environment
+        pause
+        exit /b 1
+    )
+    echo [INSTALL] Installing backend dependencies...
+    venv\Scripts\python.exe -m pip install --upgrade pip
+    venv\Scripts\python.exe -m pip install -r requirements.txt
     if errorlevel 1 (
         echo [ERROR] Failed to install backend dependencies
         pause
@@ -72,8 +81,11 @@ for %%P in (8080 8092) do (
 )
 
 REM Start backend server
+if not defined WEB_WORKERS set "WEB_WORKERS=2"
+if not defined BAIDU_BROWSER_POOL_SIZE set "BAIDU_BROWSER_POOL_SIZE=2"
+if not defined BAIDU_HEADLESS set "BAIDU_HEADLESS=0"
 echo [1/2] Starting backend server (port 8092)...
-start "CiteVerifier Backend" cmd /k "python -m uvicorn web_app:app --host 0.0.0.0 --port 8092"
+start "CiteVerifier Backend" cmd /k "cd /d %~dp0 && venv\Scripts\python.exe -m uvicorn web_app:app --host 0.0.0.0 --port 8092 --workers %WEB_WORKERS%"
 
 REM Wait for backend to start
 timeout /t 3 /nobreak >nul

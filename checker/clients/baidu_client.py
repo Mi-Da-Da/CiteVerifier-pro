@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from checker.models import Reference, ExternalReference
 from checker.utils import StringUtils
+from sqlite_utils import sqlite_connection
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class BaiduCache:
 
     def _init_db(self):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS baidu_search_cache (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,7 +59,7 @@ class BaiduCache:
     def get(self, normalized_title: str) -> Optional[Dict]:
         if not normalized_title:
             return None
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             cursor = conn.execute("""
                 SELECT result_json, created_at FROM baidu_search_cache
                 WHERE normalized_title = ?
@@ -90,7 +91,7 @@ class BaiduCache:
         if not normalized_title or not _is_cacheable_result(result):
             return
         result_json = json.dumps(result, ensure_ascii=False)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             try:
                 conn.execute("""
                     INSERT OR REPLACE INTO baidu_search_cache
@@ -102,19 +103,19 @@ class BaiduCache:
                 logger.error(f"缓存写入失败: {e}")
 
     def delete(self, normalized_title: str) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             conn.execute("DELETE FROM baidu_search_cache WHERE normalized_title = ?", (normalized_title,))
             conn.commit()
 
     def clear_expired(self) -> int:
         cutoff = time.time() - _CACHE_TTL
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             cursor = conn.execute("DELETE FROM baidu_search_cache WHERE created_at < ?", (cutoff,))
             conn.commit()
             return cursor.rowcount
 
     def get_stats(self) -> Dict[str, int]:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_connection(self.db_path) as conn:
             cursor = conn.execute("SELECT COUNT(*) FROM baidu_search_cache")
             total = cursor.fetchone()[0]
             cutoff = time.time() - _CACHE_TTL
@@ -156,10 +157,10 @@ def _run_selenium_search(titles: List[str]) -> List[Dict]:
         from checker.clients.baidu_selenium import batch_validate_parallel
         df = batch_validate_parallel(
             titles_list=titles,
-            headless=False,
+            headless=None,
             exact_match=False,
             similarity_threshold=0.7,
-            max_workers=min(4, len(titles)),
+            max_workers=None,
         )
         if df.empty:
             return []

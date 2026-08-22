@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from sqlite_utils import connect_sqlite
 
 # ── 路径与常量 ───────────────────────────────────────────────
 _DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -39,14 +40,24 @@ def _load_or_create_secret() -> str:
         return _SECRET_FILE.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
         pass
-    # 生成新密钥并持久化
+    # 用排他创建避免多 worker 首次启动时各自产生不同密钥。
     new_secret = uuid.uuid4().hex + uuid.uuid4().hex
     try:
-        _SECRET_FILE.write_text(new_secret, encoding="utf-8")
+        fd = os.open(_SECRET_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        with os.fdopen(fd, "w", encoding="utf-8") as secret_file:
+            secret_file.write(new_secret)
+        return new_secret
+    except FileExistsError:
+        # 创建者可能尚未写完，短暂等待避免读到空密钥。
+        for _ in range(20):
+            existing = _SECRET_FILE.read_text(encoding="utf-8").strip()
+            if existing:
+                return existing
+            time.sleep(0.05)
+        raise RuntimeError("Session secret file exists but is empty")
     except OSError:
         # 只读环境或权限不足时回退到内存密钥（重启失效）
-        pass
-    return new_secret
+        return new_secret
 
 
 _SECRET_KEY = _load_or_create_secret()
@@ -55,11 +66,7 @@ _serializer = URLSafeTimedSerializer(_SECRET_KEY, salt="citeverifier-session")
 
 # ── 数据库初始化 ─────────────────────────────────────────────
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_SESSION_DB_PATH), timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    return conn
+    return connect_sqlite(_SESSION_DB_PATH, row_factory=True)
 
 
 def _ensure_initialized() -> None:

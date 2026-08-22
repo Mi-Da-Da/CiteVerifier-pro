@@ -18,7 +18,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install -r /app/requirements.txt
 
 # 后端 Web 运行所需文件（templates/static 已随 React 前端迁移移除，verifier CLI 通路不打包）
-COPY web_app.py dblp_match.py runtime_store.py user_database.py /app/
+COPY web_app.py dblp_match.py runtime_store.py user_database.py session_manager.py sqlite_utils.py /app/
 COPY parser /app/parser
 COPY checker /app/checker
 
@@ -27,4 +27,4 @@ COPY checker /app/checker
 VOLUME ["/runtime"]
 EXPOSE 8092
 
-CMD ["uvicorn", "web_app:app", "--host", "0.0.0.0", "--port", "8092"]
+CMD ["sh", "-c", "uvicorn web_app:app --host 0.0.0.0 --port 8092 --workers ${WEB_WORKERS:-2}"]
