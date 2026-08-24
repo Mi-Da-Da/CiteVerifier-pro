@@ -65,6 +65,7 @@ _IDLE_PROGRESS: dict[str, Any] = {
     "total": 0,
     "processed": 0,
     "found": 0,
+    "percent": 0,
 }
 def _progress_task_id(request: Request) -> str:
     """读取前端生成的任务标识；旧客户端未传时仍可使用默认任务。"""
@@ -305,7 +306,7 @@ def _require_user(request: Request) -> dict[str, Any]:
     return user
 
 
-def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields: dict[str, dict[str, Any]] | None = None, lang: str = "en", user_id: int | None = None, task_id: str = "default") -> dict[str, Any]:
+def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields: dict[str, dict[str, Any]] | None = None, lang: str = "en", user_id: int | None = None, task_id: str = "default", progress_stage_prefix: int = 0) -> dict[str, Any]:
     """统一的批量标题检索逻辑，供纯标题、CSV、PDF 批量接口复用。
     逐条按标题是否含中文字符分流：含中文走百度学术，不含中文走 DBLP。
     lang 参数仅用于决定 _set_progress 展示的初始文案，不再整体控制检索路径。
@@ -333,19 +334,64 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
     zh_titles = [t for t in titles if _is_chinese_title(t)]
     en_titles = [t for t in titles if not _is_chinese_title(t)]
 
+    google_scholar_batch = None
+    google_search_batch = None
+    if en_titles:
+        try:
+            from checker.clients.serpapi_google_scholar_client import (
+                batch_search_google_scholar,
+                is_available as google_scholar_is_available,
+            )
+            if google_scholar_is_available():
+                google_scholar_batch = batch_search_google_scholar
+        except Exception as exc:
+            logger.warning(f"谷歌学术客户端加载失败，跳过回退: {exc}")
+
+        try:
+            from checker.clients.serpapi_google_search_client import (
+                batch_search_google_search,
+                is_available as google_search_is_available,
+            )
+            if google_search_is_available():
+                google_search_batch = batch_search_google_search
+        except Exception as exc:
+            logger.warning(f"谷歌搜索客户端加载失败，跳过回退: {exc}")
+
+    stages: list[str] = []
+    if zh_titles:
+        stages.append("Searching Baidu Scholar")
+    if en_titles:
+        stages.append("Searching DBLP")
+        if google_scholar_batch is not None:
+            stages.append("Searching Google Scholar (DBLP fallback)")
+        if google_search_batch is not None:
+            stages.append("Searching Google (final fallback)")
+    stages.append("Preparing results")
+    progress_stage_total = progress_stage_prefix + len(stages)
+
+    def stage_bounds(stage: str) -> tuple[int, int]:
+        stage_index = progress_stage_prefix + stages.index(stage)
+        return (
+            round((stage_index / progress_stage_total) * 99),
+            round(((stage_index + 1) / progress_stage_total) * 99),
+        )
+
     progress_user_id = int(user_id or 0)
+    first_stage_start, _ = stage_bounds(stages[0])
     _set_progress(
         progress_user_id,
         task_id,
         status="searching",
-        stage="Searching Baidu Scholar / DBLP",
+        stage=stages[0],
         total=len(titles),
         processed=0,
         found=0,
+        percent=first_stage_start,
     )
 
     zh_result_map: dict[str, dict[str, Any]] = {}
     if zh_titles:
+        _, baidu_stage_end = stage_bounds("Searching Baidu Scholar")
         from checker.clients.baidu_client import batch_search_baidu
         raw_results = asyncio.run(batch_search_baidu(zh_titles))
         for r in raw_results:
@@ -362,14 +408,28 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
                 "source": r.get("source", "baidu"),
                 "error": r.get("error"),
             })
+        _set_progress(progress_user_id, task_id, percent=baidu_stage_end)
 
     en_result_map: dict[str, dict[str, Any]] = {}
     if en_titles:
+        dblp_stage_start, dblp_stage_end = stage_bounds("Searching DBLP")
+        _set_progress(
+            progress_user_id,
+            task_id,
+            stage="Searching DBLP",
+            percent=dblp_stage_start,
+        )
         db_path = _resolve_db_path()
         if not db_path.exists():
             raise HTTPException(status_code=404, detail="DBLP database not found.")
         en_raw_results = _parallel_batch_search(
-            db_path, en_titles, max_candidates, progress_user_id, task_id
+            db_path,
+            en_titles,
+            max_candidates,
+            progress_user_id,
+            task_id,
+            progress_start=dblp_stage_start,
+            progress_end=dblp_stage_end,
         )
         for r in en_raw_results:
             qt = r.get("query_title", "")
@@ -377,16 +437,14 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
             en_result_map[qt] = _with_verification_status(r)
 
         # 谷歌学术回退：DBLP 未命中的英文标题交给 SerpApi 谷歌学术
-        try:
-            from checker.clients.serpapi_google_scholar_client import (
-                batch_search_google_scholar,
-                is_available as google_scholar_is_available,
+        if google_scholar_batch is not None:
+            gs_stage_start, gs_stage_end = stage_bounds("Searching Google Scholar (DBLP fallback)")
+            _set_progress(
+                progress_user_id,
+                task_id,
+                stage="Searching Google Scholar (DBLP fallback)",
+                percent=gs_stage_start,
             )
-        except Exception as exc:
-            logger.warning(f"谷歌学术客户端加载失败，跳过回退: {exc}")
-            google_scholar_is_available = None  # type: ignore[assignment]
-
-        if google_scholar_is_available and google_scholar_is_available():
             not_found_en = [
                 t for t in en_titles
                 if en_result_map.get(t, {}).get("verification_status") != "verified"
@@ -397,9 +455,10 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
                     task_id,
                     stage="Searching Google Scholar (DBLP fallback)",
                     total=len(titles),
+                    percent=gs_stage_start,
                 )
                 try:
-                    gs_results = asyncio.run(batch_search_google_scholar(not_found_en))
+                    gs_results = asyncio.run(google_scholar_batch(not_found_en))
                 except Exception as exc:
                     logger.warning(f"谷歌学术批量回退失败: {exc}")
                     gs_results = []
@@ -435,18 +494,17 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
                     runtime_store.increment_counter(
                         "google_scholar_fallback_found", delta=gs_found
                     )
+            _set_progress(progress_user_id, task_id, percent=gs_stage_end)
 
         # 谷歌搜索回退：谷歌学术仍未命中的标题交给 SerpApi 谷歌搜索
-        try:
-            from checker.clients.serpapi_google_search_client import (
-                batch_search_google_search,
-                is_available as google_search_is_available,
+        if google_search_batch is not None:
+            google_stage_start, google_stage_end = stage_bounds("Searching Google (final fallback)")
+            _set_progress(
+                progress_user_id,
+                task_id,
+                stage="Searching Google (final fallback)",
+                percent=google_stage_start,
             )
-        except Exception as exc:
-            logger.warning(f"谷歌搜索客户端加载失败，跳过回退: {exc}")
-            google_search_is_available = None  # type: ignore[assignment]
-
-        if google_search_is_available and google_search_is_available():
             still_not_found = [
                 t for t in en_titles
                 if en_result_map.get(t, {}).get("verification_status") != "verified"
@@ -457,9 +515,10 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
                     task_id,
                     stage="Searching Google (final fallback)",
                     total=len(titles),
+                    percent=google_stage_start,
                 )
                 try:
-                    gsearch_results = asyncio.run(batch_search_google_search(still_not_found))
+                    gsearch_results = asyncio.run(google_search_batch(still_not_found))
                 except Exception as exc:
                     logger.warning(f"谷歌搜索批量回退失败: {exc}")
                     gsearch_results = []
@@ -495,6 +554,7 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
                     runtime_store.increment_counter(
                         "google_search_fallback_found", delta=gsearch_found
                     )
+            _set_progress(progress_user_id, task_id, percent=google_stage_end)
 
     # 按原始顺序合并结果，每条标题去各自的结果表里取
     batch_results = []
@@ -505,6 +565,13 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
             batch_results.append(_with_verification_status(en_result_map.get(t, {"query_title": t, "found": False, "source": "dblp"})))
 
     status_counts = {status: 0 for status in ("verified", "suspicious", "unverifiable", "search_error")}
+    prepare_stage_start, prepare_stage_end = stage_bounds("Preparing results")
+    _set_progress(
+        progress_user_id,
+        task_id,
+        stage="Preparing results",
+        percent=prepare_stage_start,
+    )
     for idx, result in enumerate(batch_results, start=1):
         found = bool(result.get("found"))
         verification_status = result["verification_status"]
@@ -512,7 +579,16 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
         if found:
             found_count += 1
 
-        _set_progress(progress_user_id, task_id, processed=idx, found=found_count)
+        finalize_percent = prepare_stage_start + int(
+            (idx / len(batch_results)) * (prepare_stage_end - prepare_stage_start)
+        )
+        _set_progress(
+            progress_user_id,
+            task_id,
+            processed=idx,
+            found=found_count,
+            percent=finalize_percent,
+        )
 
         title_key = result.get("query_title", titles[idx - 1])
         runtime_store.record_batch_item(
@@ -559,6 +635,7 @@ def _run_batch_search(titles: list[str], max_candidates: int, extra_item_fields:
         stage="Done",
         processed=len(items),
         found=found_count,
+        percent=100,
     )
 
     return {
@@ -658,6 +735,8 @@ def _parallel_batch_search(
     max_candidates: int,
     user_id: int,
     task_id: str,
+    progress_start: int = 0,
+    progress_end: int = 50,
 ) -> list[dict[str, Any]]:
     """
     批量检索 DBLP，使用 ThreadPoolExecutor 并行搜索。
@@ -729,7 +808,16 @@ def _parallel_batch_search(
                 processed_count += 1
                 if result.get("found"):
                     found_count += 1
-                _set_progress(user_id, task_id, processed=processed_count, found=found_count)
+                percent = progress_start + round(
+                    (processed_count / len(titles)) * (progress_end - progress_start)
+                )
+                _set_progress(
+                    user_id,
+                    task_id,
+                    processed=processed_count,
+                    found=found_count,
+                    percent=percent,
+                )
 
     return results  # type: ignore[return-value]
 
@@ -1020,8 +1108,8 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
     all_references: list[dict] = []
 
     # ── 阶段1：逐个 PDF 解析 ──────────────────────────────
-    _set_progress(user["user_id"], task_id, status="parsing", stage="Parsing PDF references", total=0, processed=0, found=0)
-    for file in files:
+    _set_progress(user["user_id"], task_id, status="parsing", stage="Parsing PDF references", total=len(files), processed=0, found=0, percent=0)
+    for file_index, file in enumerate(files, start=1):
         if not (file.filename or "").lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail=f"Only PDF files are allowed: {file.filename}")
         # 用 uuid 前缀避免多用户同时上传同名 PDF 时 temp 文件互相覆盖 / 误删
@@ -1035,6 +1123,12 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
             for ref in refs:
                 ref["source_file"] = file.filename or ""
             all_references.extend(refs)
+            _set_progress(
+                user["user_id"],
+                task_id,
+                processed=file_index,
+                percent=round((file_index / len(files)) * 10),
+            )
         except Exception as e:
             _set_progress(user["user_id"], task_id, status="error", stage=str(e))
             raise HTTPException(status_code=500, detail=str(e))
@@ -1049,7 +1143,7 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
     }
 
     if not titles:
-        _set_progress(user["user_id"], task_id, status="done", stage="Done", total=0, processed=0, found=0)
+        _set_progress(user["user_id"], task_id, status="done", stage="Done", total=0, processed=0, found=0, percent=100)
         return _json_safe({
             "summary": {
                 "run_id": None,
@@ -1069,7 +1163,15 @@ def api_search_pdf_batch(request: Request, files: list[UploadFile] = File(...), 
             "references": all_references,
         })
 
-    result = _run_batch_search(titles, max_candidates=100000, extra_item_fields=source_map, lang=lang, user_id=user["user_id"], task_id=task_id)
+    result = _run_batch_search(
+        titles,
+        max_candidates=100000,
+        extra_item_fields=source_map,
+        lang=lang,
+        user_id=user["user_id"],
+        task_id=task_id,
+        progress_stage_prefix=1,
+    )
     result["summary"]["file_count"] = len(files)
     result["references"] = all_references
     return _json_safe(result)

@@ -50,6 +50,7 @@ type ProgressState = {
   total: number;
   processed: number;
   found: number;
+  percent?: number;
 };
 
 function BatchSearchPage() {
@@ -114,11 +115,25 @@ function BatchSearchPage() {
 
   // 进度条
   const progressPct = () => {
+    if (progress.status === "done") return 100;
+    if (typeof progress.percent === "number")
+      return Math.max(0, Math.min(progress.status === "error" ? 99 : 100, Math.round(progress.percent)));
     if (progress.status === "parsing") return 20;
     if (progress.status === "searching" && progress.total > 0)
-      return 20 + Math.round((progress.processed / progress.total) * 80);
-    if (progress.status === "done" || progress.status === "error") return 100;
+      return Math.min(99, 20 + Math.round((progress.processed / progress.total) * 70));
     return 0;
+  };
+
+  const searchingStage = () => {
+    const labels: Record<string, { zh: string; en: string }> = {
+      "Searching Baidu Scholar": { zh: "正在检索百度学术", en: "Searching Baidu Scholar" },
+      "Searching DBLP": { zh: "正在检索 DBLP", en: "Searching DBLP" },
+      "Searching Google Scholar (DBLP fallback)": { zh: "正在检索谷歌学术", en: "Searching Google Scholar" },
+      "Searching Google (final fallback)": { zh: "正在检索谷歌搜索", en: "Searching Google" },
+      "Preparing results": { zh: "正在整理最终结果", en: "Preparing final results" },
+    };
+    const label = labels[progress.stage];
+    return label ? t(label) : progress.stage;
   };
 
   const barColor =
@@ -131,7 +146,7 @@ function BatchSearchPage() {
     if (progress.status === "parsing")
       return t({ zh: "第 1 步：LLM 解析 PDF 参考文献…", en: "Step 1: Parsing PDF references with LLM…" });
     if (progress.status === "searching")
-      return t({ zh: `第 2 步：搜索${sourceName}：${progress.processed} / ${progress.total}（已匹配 ${progress.found}）`, en: `Step 2: Searching ${sourceNameEn}: ${progress.processed} / ${progress.total} (found ${progress.found})` });
+      return t({ zh: `${searchingStage()}（已匹配 ${progress.found}）`, en: `${searchingStage()} (found ${progress.found})` });
     if (progress.status === "done")
       return t({ zh: `完成 — 共处理 ${progress.processed} 条，匹配 ${progress.found} 条`, en: `Done — ${progress.processed} processed, ${progress.found} matched` });
     if (progress.status === "error")
