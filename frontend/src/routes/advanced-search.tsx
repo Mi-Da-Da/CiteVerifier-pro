@@ -110,7 +110,7 @@ function BatchSearchPage() {
         setProgress(data);
         if (data.status === "done" || data.status === "error") stopPolling();
       } catch {}
-    }, 300);
+    }, 1000);
   };
 
   // 进度条

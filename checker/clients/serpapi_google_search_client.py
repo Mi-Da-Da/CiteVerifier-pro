@@ -441,10 +441,10 @@ async def batch_search_google_search(titles: List[str]) -> List[Dict[str, Any]]:
 
     loop = asyncio.get_event_loop()
     executor = _get_executor()
-    results = await loop.run_in_executor(
-        executor, lambda: [_search_one_title(t) for t in titles]
-    )
-    return results
+    # 每个标题作为独立任务提交，_MAX_WORKERS 个线程才会真正并行；
+    # gather 按提交顺序返回结果，与输入 titles 一一对应。
+    tasks = [loop.run_in_executor(executor, _search_one_title, t) for t in titles]
+    return await asyncio.gather(*tasks)
 
 
 async def search_single_title(title: str) -> Dict[str, Any]:

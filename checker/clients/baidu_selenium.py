@@ -93,7 +93,7 @@ def get_result_titles(driver):
         if "验证码" in page_text or "安全验证" in page_text:
             return results, False
 
-        items = driver.find_elements(By.CSS_SELECTOR, "[data-v-ee77df1d]")
+        items = driver.find_elements(By.CSS_SELECTOR, "[data-v-765a28d6]")
 
         for item in items:
             try:
