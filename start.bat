@@ -85,7 +85,7 @@ if not defined WEB_WORKERS set "WEB_WORKERS=2"
 if not defined BAIDU_BROWSER_POOL_SIZE set "BAIDU_BROWSER_POOL_SIZE=2"
 if not defined BAIDU_HEADLESS set "BAIDU_HEADLESS=0"
 echo [1/2] Starting backend server (port 8092)...
-start "CiteVerifier Backend" cmd /k "cd /d %~dp0 && venv\Scripts\python.exe -m uvicorn web_app:app --host 0.0.0.0 --port 8092 --workers %WEB_WORKERS%"
+start "CiteVerifier Backend" cmd /k "cd /d %~dp0 && venv\Scripts\python.exe -m uvicorn web_app:app --host 0.0.0.0 --port 8092 --workers %WEB_WORKERS% --timeout-graceful-shutdown 10"
 
 REM Wait for backend to start
 timeout /t 3 /nobreak >nul

@@ -14,6 +14,21 @@ from webdrivermanager_cn import ChromeDriverManagerAliMirror
 import os
 import socket
 import threading
+import json
+import re
+from contextlib import contextmanager
+
+_SHUTDOWN_EVENT = threading.Event()
+
+
+def request_browser_shutdown():
+    """通知所有百度检索线程尽快停止当前批次。"""
+    _SHUTDOWN_EVENT.set()
+
+
+def reset_browser_shutdown():
+    """应用启动时重置退出标记。"""
+    _SHUTDOWN_EVENT.clear()
 
 def _get_free_port():
     """向操作系统申请一个当前空闲的 TCP 端口，避免端口越界或多进程并发冲突。"""
@@ -152,6 +167,9 @@ def search_batch_in_browser(args):
         print(f"[浏览器 {browser_id}] ✅ 首页加载成功")
 
         for i, title in enumerate(titles_list, 1):
+            if _SHUTDOWN_EVENT.is_set():
+                print(f"[浏览器 {browser_id}] 收到退出信号，停止剩余检索")
+                break
             result = {
                 '搜索标题': title,
                 '是否存在': False,
@@ -176,7 +194,8 @@ def search_batch_in_browser(args):
                         )
                         textarea.clear()
                         textarea.send_keys(title)
-                        time.sleep(0.5)
+                        if _SHUTDOWN_EVENT.wait(0.5):
+                            break
 
                         button = driver.find_element(By.CSS_SELECTOR, "div.send-btn")
                         driver.execute_script("arguments[0].click();", button)
@@ -194,7 +213,8 @@ def search_batch_in_browser(args):
                         )
                         search_input.clear()
                         search_input.send_keys(title)
-                        time.sleep(0.5)
+                        if _SHUTDOWN_EVENT.wait(0.5):
+                            break
                         search_input.send_keys(Keys.RETURN)
                     except Exception as e:
                         # 顶部输入框定位失败：很可能页面已脱离正常搜索状态，重新加载首页后用 textarea 方式重试一次
@@ -220,7 +240,8 @@ def search_batch_in_browser(args):
                             continue
 
                 # 等待结果加载
-                time.sleep(2)
+                if _SHUTDOWN_EVENT.wait(2):
+                    break
 
                 # 获取所有搜索结果
                 search_results, page_ok = get_result_titles(driver)
@@ -239,7 +260,8 @@ def search_batch_in_browser(args):
                             time.sleep(0.5)
                             retry_button = driver.find_element(By.CSS_SELECTOR, "div.send-btn")
                             driver.execute_script("arguments[0].click();", retry_button)
-                            time.sleep(2)
+                            if _SHUTDOWN_EVENT.wait(2):
+                                break
                             search_results, page_ok = get_result_titles(driver)
                             titles_found = [r['title'] for r in search_results]
                         except Exception:
@@ -286,7 +308,8 @@ def search_batch_in_browser(args):
 
                 # 搜索间隔
                 if i < len(titles_list):
-                    time.sleep(1)
+                    if _SHUTDOWN_EVENT.wait(1):
+                        break
 
             except Exception as e:
                 result['错误信息'] = f'搜索出错: {str(e)[:100]}'
@@ -315,6 +338,97 @@ _DRIVER_PATH_CACHE: str | None = None
 _DRIVER_PATH_LOCK = threading.Lock()
 
 
+def _installed_chrome_version() -> str | None:
+    """读取本机 Chrome 完整版本；无法可靠识别时返回 None。"""
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+        locations = (
+            (winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon"),
+            (winreg.HKEY_LOCAL_MACHINE, r"Software\Google\Chrome\BLBeacon"),
+            (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Google\Chrome\BLBeacon"),
+        )
+        for hive, key_path in locations:
+            try:
+                with winreg.OpenKey(hive, key_path) as key:
+                    version, _ = winreg.QueryValueEx(key, "version")
+                match = re.match(r"\d+(?:\.\d+){2,3}", str(version))
+                if match:
+                    return match.group(0)
+            except OSError:
+                continue
+    except (ImportError, ValueError):
+        pass
+    return None
+
+
+def _cached_chromedriver_path(driver_dir: str) -> str | None:
+    """从 webdrivermanager_cn 的磁盘缓存中复用与当前 Chrome 匹配的驱动。"""
+    chrome_version = _installed_chrome_version()
+    if chrome_version is None:
+        return None
+    chrome_build = ".".join(chrome_version.split(".")[:3])
+    cache_path = os.path.join(driver_dir, ".webdriver", "driver_cache.json")
+    try:
+        with open(cache_path, "r", encoding="utf-8") as cache_file:
+            cache = json.load(cache_file)
+    except (OSError, ValueError, TypeError):
+        return None
+
+    entries = cache.get("chromedriver", {}) if isinstance(cache, dict) else {}
+    if not isinstance(entries, dict):
+        return None
+    for entry in entries.values():
+        if not isinstance(entry, dict):
+            continue
+        version = str(entry.get("version", ""))
+        path = entry.get("path")
+        driver_build = ".".join(version.split(".")[:3])
+        if driver_build == chrome_build and isinstance(path, str) and os.path.isfile(path):
+            return os.path.abspath(path)
+    return None
+
+
+@contextmanager
+def _driver_install_lock(lock_path: str, timeout: float = 120.0):
+    """跨进程操作系统文件锁；进程异常退出时由系统自动释放。"""
+    lock_file = open(lock_path, "a+b")
+    lock_file.seek(0, os.SEEK_END)
+    if lock_file.tell() == 0:
+        lock_file.write(b"0")
+        lock_file.flush()
+
+    deadline = time.monotonic() + timeout
+    locked = False
+    try:
+        while not locked:
+            lock_file.seek(0)
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+            except (OSError, BlockingIOError):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Timed out waiting for ChromeDriver installation lock")
+                time.sleep(0.2)
+        yield
+    finally:
+        if locked:
+            lock_file.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        lock_file.close()
+
+
 def ensure_chromedriver(driver_path: str | None = None) -> str:
     """
     返回已安装好的 chromedriver 可执行文件绝对路径。
@@ -337,30 +451,18 @@ def ensure_chromedriver(driver_path: str | None = None) -> str:
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         driver_dir = os.path.join(project_root, "chromedriver")
         os.makedirs(driver_dir, exist_ok=True)
+        cached_path = _cached_chromedriver_path(driver_dir)
+        if cached_path:
+            print(f"复用已缓存的 ChromeDriver: {cached_path}")
+            _DRIVER_PATH_CACHE = cached_path
+            return cached_path
+
         install_lock = os.path.join(driver_dir, ".install.lock")
-        deadline = time.time() + 120
-        lock_fd = None
-        while lock_fd is None:
-            try:
-                lock_fd = os.open(install_lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
-            except FileExistsError:
-                try:
-                    if time.time() - os.path.getmtime(install_lock) > 300:
-                        os.unlink(install_lock)
-                        continue
-                except FileNotFoundError:
-                    continue
-                if time.time() >= deadline:
-                    raise TimeoutError("Timed out waiting for ChromeDriver installation lock")
-                time.sleep(0.2)
-        try:
-            path = ChromeDriverManagerAliMirror(path=driver_dir).install()
-        finally:
-            os.close(lock_fd)
-            try:
-                os.unlink(install_lock)
-            except FileNotFoundError:
-                pass
+        with _driver_install_lock(install_lock):
+            # 另一个 Uvicorn worker 可能刚刚完成安装，拿到锁后必须再次检查磁盘缓存。
+            path = _cached_chromedriver_path(driver_dir)
+            if not path:
+                path = ChromeDriverManagerAliMirror(path=driver_dir).install()
         print(f"ChromeDriver 已准备完成: {path}")
         _DRIVER_PATH_CACHE = path
         return path
@@ -385,10 +487,24 @@ class ChromeDriverPool:
         self._drivers = Queue(maxsize=self.size)
         self._initialized = False
         self._init_lock = threading.Lock()
+        self._drivers_lock = threading.Lock()
+        self._all_drivers = []
+        self._closing = False
 
     def _new_driver(self):
+        if _SHUTDOWN_EVENT.is_set():
+            raise RuntimeError("Browser pool is shutting down")
         path = ensure_chromedriver(self.driver_path)
-        return self.driver_factory(self.headless, path)
+        driver = self.driver_factory(self.headless, path)
+        if _SHUTDOWN_EVENT.is_set():
+            try:
+                driver.quit()
+            except Exception:
+                pass
+            raise RuntimeError("Browser pool is shutting down")
+        with self._drivers_lock:
+            self._all_drivers.append(driver)
+        return driver
 
     def _ensure_initialized(self):
         if self._initialized:
@@ -412,6 +528,8 @@ class ChromeDriverPool:
                 raise
 
     def _return_driver(self, driver):
+        if self._closing or _SHUTDOWN_EVENT.is_set():
+            return
         try:
             _ = driver.current_url
         except Exception:
@@ -440,19 +558,53 @@ class ChromeDriverPool:
             finally:
                 self._return_driver(driver)
 
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        executor = ThreadPoolExecutor(max_workers=worker_count)
+        try:
             nested = list(executor.map(run_chunk, enumerate(chunks, 1)))
+        finally:
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except TypeError:  # Python 3.8 compatibility
+                executor.shutdown(wait=False)
         return [result for group in nested for result in group]
 
-    def shutdown(self):
-        with self._init_lock:
-            while not self._drivers.empty():
-                driver = self._drivers.get_nowait()
+    def shutdown(self, timeout=5.0):
+        self._closing = True
+        request_browser_shutdown()
+        init_lock_acquired = self._init_lock.acquire(timeout=min(0.5, timeout))
+        try:
+            with self._drivers_lock:
+                drivers = list(self._all_drivers)
+                self._all_drivers.clear()
+
+            def quit_driver(driver):
                 try:
                     driver.quit()
                 except Exception:
                     pass
+
+            quit_threads = []
+            for driver in drivers:
+                thread = threading.Thread(target=quit_driver, args=(driver,), daemon=True)
+                thread.start()
+                quit_threads.append(thread)
+
+            deadline = time.monotonic() + timeout
+            for thread in quit_threads:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                thread.join(remaining)
+
+            while not self._drivers.empty():
+                try:
+                    self._drivers.get_nowait()
+                except Exception:
+                    break
             self._initialized = False
+        finally:
+            if init_lock_acquired:
+                self._init_lock.release()
 
 
 _BROWSER_POOL = None

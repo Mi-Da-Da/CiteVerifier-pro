@@ -20,6 +20,14 @@ logger = logging.getLogger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=4)
 
+
+def shutdown_baidu_executor() -> None:
+    """停止接收新的百度检索任务；运行中的 Selenium 由浏览器池关闭来中断。"""
+    try:
+        _executor.shutdown(wait=False, cancel_futures=True)
+    except TypeError:  # Python 3.8 compatibility
+        _executor.shutdown(wait=False)
+
 _CACHE_TTL = 86400
 _CACHE_MIN_SIMILARITY = 0.9
 _CACHE_DB_PATH = Path(__file__).parent.parent.parent / "data/baidu_cache.db"

@@ -79,23 +79,32 @@ def _set_progress(user_id: int, task_id: str, **kwargs: Any) -> None:
     runtime_store.set_task_progress(user_id, task_id, _IDLE_PROGRESS, kwargs)
 
 
-_prewarm_tasks: set[asyncio.Task] = set()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_user_db()
     runtime_store.purge_task_progress()
-    # 后台预安装 ChromeDriver，避免首次百度学术搜索时阻塞
-    task = asyncio.create_task(asyncio.to_thread(_prewarm_chromedriver))
-    _prewarm_tasks.add(task)
-    task.add_done_callback(_prewarm_tasks.discard)
+    try:
+        from checker.clients.baidu_selenium import reset_browser_shutdown
+        reset_browser_shutdown()
+    except Exception as exc:
+        logger.warning(f"Browser shutdown state reset failed: {exc}")
+    # 守护线程不会在驱动下载异常阻塞时拖住解释器退出。
+    prewarm_thread = threading.Thread(target=_prewarm_chromedriver, daemon=True)
+    prewarm_thread.start()
     try:
         yield
     finally:
         try:
-            from checker.clients.baidu_selenium import shutdown_browser_pool
-            await asyncio.to_thread(shutdown_browser_pool)
+            from checker.clients.baidu_selenium import request_browser_shutdown, shutdown_browser_pool
+            request_browser_shutdown()
+            try:
+                from checker.clients.baidu_client import shutdown_baidu_executor
+                shutdown_baidu_executor()
+            except Exception as exc:
+                logger.warning(f"Baidu executor shutdown failed: {exc}")
+            await asyncio.wait_for(asyncio.to_thread(shutdown_browser_pool), timeout=8)
+        except asyncio.TimeoutError:
+            logger.warning("ChromeDriver pool shutdown timed out; continuing process exit")
         except Exception as exc:
             logger.warning(f"ChromeDriver pool shutdown failed: {exc}")
 

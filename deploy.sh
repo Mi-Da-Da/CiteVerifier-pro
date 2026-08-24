@@ -203,7 +203,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=$PROJECT_DIR
 EnvironmentFile=$PROJECT_DIR/.env
-ExecStart=$PROJECT_DIR/venv/bin/python -m uvicorn web_app:app --host 127.0.0.1 --port 8092 --workers 2
+ExecStart=$PROJECT_DIR/venv/bin/python -m uvicorn web_app:app --host 127.0.0.1 --port 8092 --workers 2 --timeout-graceful-shutdown 10
 Restart=on-failure
 RestartSec=3
 # ChromeDriver 下载目录允许写

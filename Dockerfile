@@ -27,4 +27,4 @@ COPY checker /app/checker
 VOLUME ["/runtime"]
 EXPOSE 8092
 
-CMD ["sh", "-c", "uvicorn web_app:app --host 0.0.0.0 --port 8092 --workers ${WEB_WORKERS:-2}"]
+CMD ["sh", "-c", "uvicorn web_app:app --host 0.0.0.0 --port 8092 --workers ${WEB_WORKERS:-2} --timeout-graceful-shutdown 10"]
