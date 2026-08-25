@@ -882,9 +882,9 @@ def api_login(payload: LoginRequest, request: Request, response: Response) -> di
     if result.get("success") and result.get("user_id"):
         # 创建 session 并下发签名 cookie
         token = session_manager.create_session(result["user_id"], result["username"])
-        # Secure 标志：环境变量 COOKIE_SECURE=true 强制开启（反代场景），
-        # 否则按请求 scheme 自动判断（https 时开启，http 本地开发不开启）
-        secure = os.getenv("COOKIE_SECURE", "").lower() == "true" or request.url.scheme == "https"
+        # Secure 标志：仅在 COOKIE_SECURE=true 时开启；
+        # HTTP/IP 直连场景默认不开启，避免浏览器不回带 cookie 导致登录态丢失。
+        secure = os.getenv("COOKIE_SECURE", "").lower() == "true"
         response.set_cookie(
             key=session_manager.COOKIE_NAME,
             value=token,

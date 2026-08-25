@@ -168,7 +168,8 @@ function BatchSearchPage() {
     setSummary(null);
     setItems([]);
     setProgress({ status: "searching", stage: `Searching ${sourceNameEn}`, total: lines.length, processed: 0, found: 0 });
-    const taskId = crypto.randomUUID();
+    // HTTP(IP 直连)下 crypto.randomUUID 不可用(非 secure context)，需 fallback
+    const taskId = crypto.randomUUID?.() ?? (Date.now().toString(36) + Math.random().toString(36).slice(2));
     startPolling(taskId);
     try {
       const res = await fetch("/api/search/title/batch", {
@@ -207,7 +208,8 @@ function BatchSearchPage() {
     setSummary(null);
     setItems([]);
     setProgress({ status: "parsing", stage: "Parsing PDF", total: 0, processed: 0, found: 0 });
-    const taskId = crypto.randomUUID();
+    // HTTP(IP 直连)下 crypto.randomUUID 不可用(非 secure context)，需 fallback
+    const taskId = crypto.randomUUID?.() ?? (Date.now().toString(36) + Math.random().toString(36).slice(2));
     startPolling(taskId);
 
     const formData = new FormData();
@@ -252,7 +254,8 @@ function BatchSearchPage() {
     setSummary(null);
     setItems([]);
     setProgress({ status: "searching", stage: "Uploading CSV", total: 0, processed: 0, found: 0 });
-    const taskId = crypto.randomUUID();
+    // HTTP(IP 直连)下 crypto.randomUUID 不可用(非 secure context)，需 fallback
+    const taskId = crypto.randomUUID?.() ?? (Date.now().toString(36) + Math.random().toString(36).slice(2));
     startPolling(taskId);
 
     const formData = new FormData();
