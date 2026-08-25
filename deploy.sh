@@ -3,24 +3,27 @@
 # CiteVerifier-Pro 一键部署脚本 (Ubuntu 22.04+ / 公网 VPS)
 #
 # 用法:
-#   1. 把项目代码上传到 /opt/citeverifier（或修改下方 PROJECT_DIR）
-#   2. 修改下方 DOMAIN / ADMIN_EMAIL / 后端 API 密钥
-#   3. sudo bash deploy.sh
+#   sudo env DOMAIN=example.com ADMIN_EMAIL=admin@example.com bash deploy.sh
+#   也可直接执行 sudo bash deploy.sh（仅启用 HTTP，使用当前项目目录）
 #
-# 完成后访问 https://<DOMAIN>
+# 完成后通过服务器 IP 或配置的域名访问
 # =============================================================================
 set -euo pipefail
 
 # ─────────────────── 用户配置区（按需修改）─────────────────────────────────
-PROJECT_DIR="/opt/citeverifier"          # 项目根目录
-DOMAIN="citeverifier.example.com"        # 你的域名（必须已解析到本机）
-ADMIN_EMAIL="admin@example.com"          # Let's Encrypt 证书通知邮箱
-PYTHON_VER="3.11"                         # Python 版本 (>=3.10)
-NODE_VER="20"                             # Node.js 主版本
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}" # 默认使用 deploy.sh 所在目录
+DOMAIN="${DOMAIN:-_}"                     # 未配置域名时可通过服务器 IP 访问
+ADMIN_EMAIL="${ADMIN_EMAIL:-}"
+NODE_VER="${NODE_VER:-22}"
+ENABLE_SSL="${ENABLE_SSL:-0}"             # 设为 1 时自动申请证书
+CONFIGURE_APT_MIRROR="${CONFIGURE_APT_MIRROR:-0}"
+SERVICE_USER="${SERVICE_USER:-${SUDO_USER:-root}}"
+SERVICE_GROUP="$(id -gn "$SERVICE_USER" 2>/dev/null || echo "$SERVICE_USER")"
 
 # 下方两个 key 必须填，否则批量检测 / PDF 解析不可用
-SERPAPI_API_KEY="请改成你的_serpapi_key"
-DASHSCOPE_API_KEY="请改成你的_dashscope_key"
+SERPAPI_API_KEY="请改成你的serpapi api key"
+DASHSCOPE_API_KEY="请改成你的dashscope api key"
 # ────────────────────────────────────────────────────────────────────────────
 
 # 颜色与日志
@@ -43,6 +46,11 @@ cd "$PROJECT_DIR"
 
 # ─────────────────── 1. 配置国内 apt 源加速 (可选) ────────────────────────────
 configure_apt_mirror() {
+    [[ "$CONFIGURE_APT_MIRROR" == "1" ]] || {
+        log "保留服务器现有 apt 软件源（如需清华源请设置 CONFIGURE_APT_MIRROR=1）"
+        apt-get update -y
+        return
+    }
     if grep -q "mirrors.tuna.tsinghua.edu.cn" /etc/apt/sources.list 2>/dev/null; then
         log "apt 已使用清华镜像，跳过"
         return
@@ -106,17 +114,17 @@ install_chrome() {
 # ─────────────────── 5. 后端 Python 依赖 ────────────────────────────────────
 setup_backend() {
     log "创建 Python venv 并安装后端依赖..."
-    python3 -m venv venv
+    if [[ ! -x venv/bin/python ]]; then
+        python3 -m venv venv
+    fi
     venv/bin/pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple
     venv/bin/pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-    # 写入 .env（如已存在则备份后覆盖）
-    if [[ -f .env ]]; then
-        cp .env ".env.bak.$(date +%s)"
-    fi
+    # 保留已有配置；首次部署才创建 .env，避免重复部署时覆盖密钥。
     local session_secret
     session_secret=$(venv/bin/python -c 'import secrets; print(secrets.token_hex(32))')
-    cat > .env <<EOF
+    if [[ ! -f .env ]]; then
+        cat > .env <<EOF
 # 由 deploy.sh 自动生成
 SERPAPI_API_KEY=$SERPAPI_API_KEY
 DASHSCOPE_API_KEY=$DASHSCOPE_API_KEY
@@ -137,27 +145,39 @@ WEB_WORKERS=2
 BAIDU_BROWSER_POOL_SIZE=2
 BAIDU_HEADLESS=1
 EOF
-    log ".env 已生成，记得回头改 SERPAPI_API_KEY / DASHSCOPE_API_KEY"
+        chmod 600 .env
+        log ".env 已生成"
+    else
+        log "检测到已有 .env，保留不覆盖"
+    fi
 
-    # 建数据目录
-    mkdir -p data
-    chown -R www-data:www-data data 2>/dev/null || true
+    if [[ -z "$SERPAPI_API_KEY" || -z "$DASHSCOPE_API_KEY" ]]; then
+        warn "API Key 未通过环境变量传入；请确认 $PROJECT_DIR/.env 中已有正确配置"
+    fi
+
+    # 后端需要写入运行时数据库、临时文件和 ChromeDriver 目录。
+    mkdir -p data temp chromedriver
+    touch users.db
+    chown -R "$SERVICE_USER:$SERVICE_GROUP" data temp chromedriver users.db .env
 }
 
 # ─────────────────── 6. 前端构建 ────────────────────────────────────────────
 build_frontend() {
     log "安装前端依赖并构建 (TanStack Start)..."
     cd "$PROJECT_DIR/frontend"
-    npm install --no-audit --no-fund
+    # 锁文件同步时优先使用 npm ci；依赖声明已变化时自动修复锁文件。
+    if [[ -f package-lock.json ]] && ! npm ci --no-audit --no-fund; then
+        warn "package-lock.json 与 package.json 不同步，回退到 npm install"
+        npm install --no-audit --no-fund
+    elif [[ ! -f package-lock.json ]]; then
+        npm install --no-audit --no-fund
+    fi
     npm run build
     cd "$PROJECT_DIR"
 
     # 验证产物
-    if [[ -f frontend/.output/server/index.mjs ]]; then
-        log "前端 SSR 产物: frontend/.output/server/index.mjs"
-    else
-        warn "未找到 .output/server/index.mjs，前端可能不是 Nitro 模式，需手动检查启动方式"
-    fi
+    [[ -f frontend/dist/server/server.js ]] \
+        || die "前端构建失败：未找到 frontend/dist/server/server.js"
 }
 
 # ─────────────────── 7. PM2 守护前端进程 ────────────────────────────────────
@@ -167,21 +187,15 @@ setup_pm2_frontend() {
 
     pm2 delete citeverifier-frontend 2>/dev/null || true
 
-    if [[ -f frontend/.output/server/index.mjs ]]; then
-        PORT=3000 pm2 start frontend/.output/server/index.mjs --name citeverifier-frontend
-    else
-        # 兜底：用 vite preview 静态服务
-        warn "回退到 vite preview (端口 3000)"
-        cd frontend
-        PORT=3000 pm2 start "npm run preview -- --port 3000 --host 127.0.0.1" \
-            --name citeverifier-frontend --cwd "$PROJECT_DIR/frontend"
-        cd "$PROJECT_DIR"
-    fi
+    # 当前构建产物是 Worker fetch handler，不能直接用 node 执行。
+    # 使用仓库已定义且经过本地启动脚本验证的 Vite 服务入口。
+    pm2 start npm --name citeverifier-frontend --cwd "$PROJECT_DIR/frontend" -- \
+        run dev -- --host 127.0.0.1 --port 8080 --strictPort
 
     pm2 save
     # 开机自启
     local env_line
-    env_line=$(pm2 startup systemd -u root --hp /root | grep -E 'sudo env' | head -1)
+    env_line=$(pm2 startup systemd -u root --hp /root | grep -E 'sudo env' | head -1 || true)
     if [[ -n "$env_line" ]]; then
         eval "$env_line"
     else
@@ -199,11 +213,11 @@ After=network.target
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
+User=$SERVICE_USER
+Group=$SERVICE_GROUP
 WorkingDirectory=$PROJECT_DIR
 EnvironmentFile=$PROJECT_DIR/.env
-ExecStart=$PROJECT_DIR/venv/bin/python -m uvicorn web_app:app --host 127.0.0.1 --port 8092 --workers 2 --timeout-graceful-shutdown 10
+ExecStart=$PROJECT_DIR/venv/bin/python -m uvicorn web_app:app --host 127.0.0.1 --port 8092 --workers 2
 Restart=on-failure
 RestartSec=3
 # ChromeDriver 下载目录允许写
@@ -212,11 +226,6 @@ ReadWritePaths=$PROJECT_DIR
 [Install]
 WantedBy=multi-user.target
 EOF
-
-    # 数据目录权限
-    chown -R www-data:www-data "$PROJECT_DIR/data" 2>/dev/null || true
-    # 项目目录让 www-data 可读可写（chromedriver 缓存等）
-    chown -R www-data:www-data "$PROJECT_DIR" 2>/dev/null || true
 
     systemctl daemon-reload
     systemctl enable --now citeverifier-backend
@@ -234,7 +243,7 @@ server {
 
     # 前端 SSR (TanStack Start)
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -243,6 +252,17 @@ server {
         # TanStack Start 可能需要 WebSocket
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
+    }
+
+    # AI 聊天是 TanStack 服务端路由，需要由前端服务处理。
+    location = /api/chat {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 600s;
     }
 
     # 后端 API
@@ -275,41 +295,55 @@ EOF
 
 # ─────────────────── 10. 申请 HTTPS 证书 (Let's Encrypt) ────────────────────
 setup_ssl() {
-    log "提示: 请确保 $DOMAIN 已正确 DNS 解析到本机公网 IP"
-    read -r -p "现在申请 HTTPS 证书吗? [y/N]: " yn
-    if [[ "$yn" =~ ^[Yy]$ ]]; then
+    if [[ "$ENABLE_SSL" == "1" ]]; then
+        [[ "$DOMAIN" != "_" ]] || die "ENABLE_SSL=1 时必须设置 DOMAIN"
+        [[ -n "$ADMIN_EMAIL" ]] || die "ENABLE_SSL=1 时必须设置 ADMIN_EMAIL"
+        log "申请 HTTPS 证书（请确保 $DOMAIN 已解析到本机）..."
         certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$ADMIN_EMAIL" --redirect
         log "HTTPS 已启用"
     else
-        warn "跳过 SSL，可稍后手动执行: certbot --nginx -d $DOMAIN"
+        log "跳过 SSL（设置 ENABLE_SSL=1 可自动申请证书）"
     fi
 }
 
 # ─────────────────── 11. 健康检查 + 输出 ────────────────────────────────────
 health_check() {
     log "等待后端启动..."
-    for i in {1..15}; do
+    local backend_ok=0
+    for i in {1..30}; do
         if curl -fsS http://127.0.0.1:8092/docs >/dev/null 2>&1; then
             log "后端已就绪"
+            backend_ok=1
             break
         fi
         sleep 2
     done
 
+    [[ "$backend_ok" == "1" ]] || {
+        systemctl --no-pager --full status citeverifier-backend || true
+        die "后端健康检查失败，请查看上方状态和 journalctl 日志"
+    }
+
     log "等待前端启动..."
-    for i in {1..15}; do
+    local frontend_ok=0
+    for i in {1..30}; do
         if curl -fsS http://127.0.0.1:8080 >/dev/null 2>&1; then
             log "前端已就绪"
+            frontend_ok=1
             break
         fi
         sleep 2
     done
+    [[ "$frontend_ok" == "1" ]] || {
+        pm2 logs citeverifier-frontend --lines 50 --nostream || true
+        die "前端健康检查失败，请查看上方 PM2 日志"
+    }
 
     echo
     echo "=============================================="
     echo " 部署完成！"
     echo "=============================================="
-    echo " 前端访问:   http://$DOMAIN  (申请证书后为 https://$DOMAIN)"
+    echo " 前端访问:   http://$DOMAIN"
     echo " 后端 API:   http://$DOMAIN/api"
     echo " API 文档:   http://$DOMAIN/docs"
     echo
@@ -324,7 +358,7 @@ health_check() {
     echo " 后续操作:"
     echo "   1. 修改 $PROJECT_DIR/.env 填入真实的 SERPAPI_API_KEY / DASHSCOPE_API_KEY"
     echo "      然后: systemctl restart citeverifier-backend"
-    echo "   2. 申请 HTTPS: sudo certbot --nginx -d $DOMAIN"
+    echo "   2. 启用 HTTPS: sudo env DOMAIN=你的域名 ADMIN_EMAIL=你的邮箱 ENABLE_SSL=1 bash deploy.sh"
     echo "=============================================="
 }
 
