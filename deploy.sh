@@ -137,7 +137,6 @@ CITEVERIFIER_RUNTIME_DB=$PROJECT_DIR/data/runtime.sqlite
 DBLP_DB_PATH=$PROJECT_DIR/dblp.sqlite
 
 # Cookie 安全配置
-COOKIE_SECURE=true
 SESSION_SECRET=$session_secret
 
 # 并发配置：2 web workers x 每 worker 2 个常驻 Chrome
