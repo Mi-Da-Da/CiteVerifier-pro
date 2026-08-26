@@ -34,7 +34,19 @@ _CACHE_DB_PATH = Path(__file__).parent.parent.parent / "data/baidu_cache.db"
 
 
 def _is_cacheable_result(result: Dict) -> bool:
-    if not isinstance(result, dict) or not result.get("是否存在") or result.get("错误信息"):
+    if not isinstance(result, dict):
+        return False
+    # pandas DataFrame 会把 None 转成 NaN(float)，需要用 math.isnan 过滤
+    import math
+    def _is_present(val):
+        if val is None:
+            return False
+        if isinstance(val, float) and math.isnan(val):
+            return False
+        return bool(val)
+    if not _is_present(result.get("是否存在")):
+        return False
+    if _is_present(result.get("错误信息")):
         return False
     try:
         return float(result.get("置信度") or 0) >= _CACHE_MIN_SIMILARITY
@@ -172,7 +184,17 @@ def _run_selenium_search(titles: List[str]) -> List[Dict]:
         )
         if df.empty:
             return []
-        return df.to_dict(orient="records")
+        # pandas DataFrame 会把 None 转成 NaN(float)，需要清洗后再返回
+        import math
+        def _sanitize(val):
+            if isinstance(val, float) and math.isnan(val):
+                return None
+            return val
+        records = df.to_dict(orient="records")
+        for r in records:
+            for k, v in list(r.items()):
+                r[k] = _sanitize(v)
+        return records
     except Exception as e:
         logger.error(f"Selenium 搜索失败: {e}")
         return []

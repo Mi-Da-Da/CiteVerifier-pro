@@ -43,7 +43,7 @@ _CACHE_TTL = 86400  # 缓存 24 小时
 _CACHE_MIN_SIMILARITY = 0.9
 _CACHE_DB_PATH = Path(__file__).parent.parent.parent / "data" / "google_search_cache.db"
 _SERPAPI_API_KEY_ENV = "SERPAPI_API_KEY"
-_SIMILARITY_THRESHOLD = 0.7
+_SIMILARITY_THRESHOLD = 0.9
 _MAX_WORKERS = 4
 _MAX_RESULTS_TO_CONSIDER = 5
 

@@ -44,7 +44,7 @@ _CACHE_MIN_SIMILARITY = 0.9
 _CACHE_DB_PATH = Path(__file__).parent.parent.parent / "data" / "google_scholar_cache.db"
 _SERPAPI_API_KEY_ENV = "SERPAPI_API_KEY"
 # 标题相似度达到此阈值即视为命中
-_SIMILARITY_THRESHOLD = 0.7
+_SIMILARITY_THRESHOLD = 0.9
 # 批量检索的线程并发上限（避免触发 SerpApi 限速）
 _MAX_WORKERS = 4
 # 只看前 N 条 organic_results（position 0..N-1），节省额度并加快匹配
